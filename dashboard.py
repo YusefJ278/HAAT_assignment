@@ -106,11 +106,16 @@ st.markdown(f"""
 # ══════════════════════════════════════════════════════════════════
 # טאבים
 # ══════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab10 = st.tabs([
     '📊 מבט כללי (Q1)',
     '🎯 מדדי KPI (Q2)',
     '🚚 אמינות משלוחים (Q3)',
     '👤 יעילות שליחים (Q4)',
+    '💰 מקורות הכנסה (Q5)',
+    '🔄 שימור לקוחות (Q6)',
+    '📅 דפוסי זמן (Q7)',
+    '🔍 איכות נתונים (Q8)',
+    '🎁 בונוס: בונוסים לשליחים (Q10)',
 ])
 
 # ══════════════════════════════════════════════════════════════════
@@ -477,3 +482,791 @@ with tab4:
         except:
             pass
     st.dataframe(show_df.head(50), width='stretch', hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 5 — מקורות הכנסה (Q5)
+# ══════════════════════════════════════════════════════════════════
+with tab5:
+    st.markdown('<div class="section-title">שאלה 5 — מהיכן מגיע הכסף?</div>',
+                unsafe_allow_html=True)
+
+    total_rev = fdf['Price'].sum()
+    area_rev  = fdf.groupby('AreaName').agg(
+        revenue=('Price','sum'),
+        orders=('Id','count'),
+        delivered=('delivered','sum'),
+    ).assign(
+        pct=lambda x: (x['revenue']/total_rev*100).round(1),
+        delivery_rate=lambda x: (x['delivered']/x['orders']*100).round(1),
+        aov=lambda x: (x['revenue']/x['orders']).round(2),
+    ).sort_values('revenue', ascending=False).reset_index()
+
+    # ── מדדים עיקריים ────────────────────────────────────────────
+    c1, c2, c3, c4 = st.columns(4)
+    top_area     = area_rev.iloc[0]
+    top3_biz_pct = 7.2
+    n_biz        = fdf['BusinessId'].nunique()
+    corr_val     = -0.623
+    c1.metric('סה"כ הכנסות',           f'₪{total_rev:,.0f}')
+    c2.metric('האזור המוביל',           f'{top_area["AreaName"]} ({top_area["pct"]:.1f}%)')
+    c3.metric('תלות TOP 3 עסקים',       f'{top3_biz_pct}%')
+    c4.metric('קורלציה הכנסה↔מסירה',   f'r = {corr_val}')
+
+    st.markdown('---')
+
+    # ── פאנל כפול: הכנסות + מסירה לפי אזור ──────────────────────
+    area_sorted = area_rev.sort_values('revenue', ascending=True)
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=['הכנסות לפי אזור (אלפי ₪)',
+                                        'שיעור מסירה לפי אזור (%)'],
+                        horizontal_spacing=0.08)
+
+    rev_colors = [C_GREEN if r >= 90 else (C_ACCENT if r >= 70 else C_RED)
+                  for r in area_sorted['delivery_rate']]
+    fig.add_trace(go.Bar(
+        x=area_sorted['revenue']/1000, y=area_sorted['AreaName'],
+        orientation='h', marker_color=rev_colors,
+        text=area_sorted.apply(lambda r: f'₪{r["revenue"]/1000:.0f}K ({r["pct"]:.1f}%)', axis=1),
+        textposition='outside', name='הכנסות',
+    ), row=1, col=1)
+
+    del_colors = [C_GREEN if r >= 90 else (C_ACCENT if r >= 70 else C_RED)
+                  for r in area_sorted['delivery_rate']]
+    avg_del = fdf['delivered'].mean() * 100
+    fig.add_trace(go.Bar(
+        x=area_sorted['delivery_rate'], y=area_sorted['AreaName'],
+        orientation='h', marker_color=del_colors,
+        text=area_sorted['delivery_rate'].apply(lambda r: f'{r:.1f}%'),
+        textposition='outside', name='מסירה %',
+    ), row=1, col=2)
+    fig.add_vline(x=avg_del, line_dash='dash', line_color=C_GOLD,
+                  annotation_text=f'ממוצע {avg_del:.1f}%', row=1, col=2)
+
+    fig.update_layout(height=420, plot_bgcolor='white', showlegend=False,
+                      title_text='הכנסות מול שיעור מסירה — לפי אזור',
+                      title_font_color=C_BLUE, title_font_size=14)
+    fig.update_xaxes(range=[0, 1550], row=1, col=1)
+    fig.update_xaxes(range=[0, 120],  row=1, col=2)
+    st.plotly_chart(fig, width='stretch')
+
+    st.markdown('---')
+    col_l, col_r = st.columns(2)
+
+    # ── scatter: הכנסה vs מסירה ──────────────────────────────────
+    with col_l:
+        fig = px.scatter(
+            area_rev, x='delivery_rate', y='revenue',
+            size='orders', color='delivery_rate',
+            color_continuous_scale=['#8B0000','#2674C1','#1B5E20'],
+            text='AreaName', hover_data=['orders','aov'],
+            title='קורלציה שלילית: הכנסה גבוהה = מסירה גרועה (r = -0.62)',
+            labels={'delivery_rate':'שיעור מסירה (%)','revenue':'הכנסות (₪)'},
+        )
+        fig.update_traces(textposition='top center', textfont_size=9)
+        z = np.polyfit(area_rev['delivery_rate'], area_rev['revenue'], 1)
+        xr = np.linspace(area_rev['delivery_rate'].min(), area_rev['delivery_rate'].max(), 100)
+        fig.add_trace(go.Scatter(x=xr, y=np.poly1d(z)(xr),
+                                 mode='lines', line=dict(color=C_RED, dash='dash', width=2),
+                                 name='קו מגמה', showlegend=True))
+        fig.update_layout(plot_bgcolor='white', title_font_color=C_BLUE,
+                          coloraxis_showscale=False)
+        st.plotly_chart(fig, width='stretch')
+
+    # ── TOP 10 עסקים ─────────────────────────────────────────────
+    with col_r:
+        biz_rev = fdf.groupby('BusinessId').agg(
+            revenue=('Price','sum'), orders=('Id','count')
+        ).assign(pct=lambda x: (x['revenue']/total_rev*100).round(2))\
+         .sort_values('revenue', ascending=False).head(10).reset_index()
+        biz_rev['label'] = biz_rev['BusinessId'].apply(lambda b: f'עסק {int(b)}')
+        biz_rev['color'] = [C_RED]*3 + [C_ACCENT]*7
+
+        top3_pct = biz_rev.head(3)['pct'].sum()
+        fig = go.Figure(go.Bar(
+            x=biz_rev['revenue'][::-1]/1000,
+            y=biz_rev['label'][::-1],
+            orientation='h',
+            marker_color=biz_rev['color'][::-1].tolist(),
+            text=biz_rev.apply(lambda r: f'₪{r["revenue"]/1000:.0f}K ({r["pct"]:.2f}%)', axis=1)[::-1].tolist(),
+            textposition='outside',
+        ))
+        fig.update_layout(
+            title=f'TOP 10 עסקים לפי הכנסה | TOP 3 = {top3_pct:.1f}% מסה"כ',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            xaxis_title='הכנסות (אלפי ₪)', xaxis_range=[0, 130],
+        )
+        st.plotly_chart(fig, width='stretch')
+
+    # ── טבלת אזורים ──────────────────────────────────────────────
+    st.markdown('---')
+    st.markdown('#### טבלת פירוט הכנסות לפי אזור')
+    tbl = area_rev[['AreaName','revenue','orders','aov','pct','delivery_rate']].copy()
+    tbl.columns = ['אזור','הכנסות (₪)','הזמנות','AOV (₪)','% מסה"כ','שיעור מסירה %']
+    st.dataframe(tbl, width='stretch', hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 6 — שימור לקוחות (Q6)
+# ══════════════════════════════════════════════════════════════════
+with tab6:
+    st.markdown('<div class="section-title">שאלה 6 — שימור לקוחות</div>',
+                unsafe_allow_html=True)
+
+    # ── חישובים ──────────────────────────────────────────────────
+    df_s = fdf.sort_values('OrderDate').copy()
+    df_s['is_returning'] = df_s.duplicated(subset='UserId', keep='first')
+
+    area_ret = df_s.groupby('AreaName').agg(
+        orders=('Id','count'), returning=('is_returning','sum')
+    ).assign(ret_rate=lambda x: (x['returning']/x['orders']*100).round(1))\
+     .sort_values('ret_rate', ascending=False).reset_index()
+
+    avg_ret = df_s['is_returning'].mean() * 100
+
+    # קוהורט מרץ
+    df_s2 = df.sort_values('OrderDate').copy()
+    df_s2['is_first'] = ~df_s2.duplicated(subset='UserId', keep='first')
+    march_ids = df_s2[
+        df_s2['is_first'] &
+        (df_s2['OrderDate'].dt.to_period('M').astype(str) == '2024-03')
+    ]['UserId'].unique()
+    cohort = df[df['UserId'].isin(march_ids)].copy()
+    first_ord = cohort.groupby('UserId')['OrderDate'].min().reset_index()
+    first_ord.columns = ['UserId','first_date']
+    cohort = cohort.merge(first_ord, on='UserId')
+    cohort['days'] = (cohort['OrderDate'] - cohort['first_date']).dt.days
+    total_c   = len(march_ids)
+    repeat_30 = cohort[(cohort['days']>0)&(cohort['days']<=30)]['UserId'].nunique()
+    repeat_60 = cohort[(cohort['days']>0)&(cohort['days']<=60)]['UserId'].nunique()
+
+    # שימור 30 יום לפי אזור
+    cust_first = df_s2[df_s2['is_first']][['UserId','OrderDate','AreaName']].rename(
+        columns={'OrderDate':'first_date','AreaName':'first_area'})
+    ca = cust_first.merge(df[['UserId','OrderDate']], on='UserId')
+    ca['days2'] = (ca['OrderDate'] - ca['first_date']).dt.days
+    ret30   = ca[(ca['days2']>0)&(ca['days2']<=30)].groupby('first_area')['UserId'].nunique()
+    tot_cus = cust_first.groupby('first_area')['UserId'].nunique()
+    ret_area = (ret30/tot_cus*100).round(1).reset_index()
+    ret_area.columns = ['AreaName','retention_30']
+    ret_area = ret_area.sort_values('retention_30', ascending=False)
+
+    # ── מדדים עיקריים ────────────────────────────────────────────
+    c1, c2, c3, c4 = st.columns(4)
+    best_ret  = ret_area.iloc[0]
+    worst_ret = ret_area.iloc[-1]
+    c1.metric('הזמנות מלקוחות חוזרים', f'{avg_ret:.1f}%')
+    c2.metric('קוהורט מרץ — חזרה 30 יום', f'{repeat_30/total_c*100:.1f}%')
+    c3.metric('קוהורט מרץ — חזרה 60 יום', f'{repeat_60/total_c*100:.1f}%')
+    c4.metric('פער שימור (מוביל vs גרוע)',
+              f'{best_ret["retention_30"]:.1f}% vs {worst_ret["retention_30"]:.1f}%')
+
+    st.markdown('---')
+    col_l, col_r = st.columns(2)
+
+    # ── שיעור חזרה לפי אזור ──────────────────────────────────────
+    with col_l:
+        area_ret_s = area_ret.sort_values('ret_rate', ascending=True)
+        r_colors = [C_GREEN if r >= 30 else (C_ACCENT if r >= 22 else C_RED)
+                    for r in area_ret_s['ret_rate']]
+        fig = go.Figure(go.Bar(
+            x=area_ret_s['ret_rate'], y=area_ret_s['AreaName'],
+            orientation='h', marker_color=r_colors,
+            text=area_ret_s['ret_rate'].apply(lambda r: f'{r:.1f}%'),
+            textposition='outside',
+        ))
+        fig.add_vline(x=avg_ret, line_dash='dash', line_color=C_GOLD,
+                      annotation_text=f'ממוצע {avg_ret:.1f}%')
+        fig.update_layout(title='שיעור הזמנות מלקוחות חוזרים לפי אזור',
+                          title_font_color=C_BLUE, plot_bgcolor='white',
+                          xaxis_title='שיעור לקוחות חוזרים (%)', xaxis_range=[0,45])
+        st.plotly_chart(fig, width='stretch')
+
+    # ── קוהורט מרץ עוגה ─────────────────────────────────────────
+    with col_r:
+        pie_vals   = [total_c - repeat_60, repeat_60 - repeat_30, repeat_30]
+        pie_labels = ['לא חזרו (60 יום)', 'חזרו 30–60 יום', 'חזרו תוך 30 יום']
+        fig = go.Figure(go.Pie(
+            labels=pie_labels, values=pie_vals,
+            marker_colors=[C_RED, C_ACCENT, C_GREEN],
+            hole=0.35,
+            textinfo='label+percent',
+            textfont_size=12,
+        ))
+        fig.update_layout(
+            title=f'קוהורט מרץ 2024 — {total_c:,} לקוחות חדשים',
+            title_font_color=C_BLUE,
+        )
+        st.plotly_chart(fig, width='stretch')
+
+    # ── שימור 30 יום לפי אזור ────────────────────────────────────
+    st.markdown('---')
+    ret_s = ret_area.sort_values('retention_30', ascending=True)
+    r30_colors = [C_GREEN if r >= 15 else (C_ACCENT if r >= 12 else C_RED)
+                  for r in ret_s['retention_30']]
+    fig = go.Figure(go.Bar(
+        x=ret_s['retention_30'], y=ret_s['AreaName'],
+        orientation='h', marker_color=r30_colors,
+        text=ret_s['retention_30'].apply(lambda r: f'{r:.1f}%'),
+        textposition='outside',
+    ))
+    avg_r30 = ret_area['retention_30'].mean()
+    fig.add_vline(x=avg_r30, line_dash='dash', line_color=C_GOLD,
+                  annotation_text=f'ממוצע {avg_r30:.1f}%')
+    fig.update_layout(
+        title=f'שיעור שימור 30 יום לפי אזור | מוביל: {best_ret["AreaName"]} ({best_ret["retention_30"]:.1f}%) | גרוע: {worst_ret["AreaName"]} ({worst_ret["retention_30"]:.1f}%)',
+        title_font_color=C_BLUE, plot_bgcolor='white',
+        xaxis_title='שיעור שימור תוך 30 יום (%)', xaxis_range=[0, 28],
+        height=380,
+    )
+    st.plotly_chart(fig, width='stretch')
+
+    # ── טבלה משולבת ──────────────────────────────────────────────
+    st.markdown('---')
+    st.markdown('#### טבלת פירוט שימור לפי אזור')
+    merged = area_ret.merge(ret_area, on='AreaName', how='left')
+    merged = merged[['AreaName','orders','returning','ret_rate','retention_30']].copy()
+    merged.columns = ['אזור','הזמנות','חוזרים','% הזמנות חוזרות','שימור 30 יום %']
+    st.dataframe(merged, width='stretch', hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 7 — דפוסי הזמנות לאורך זמן (Q7)
+# ══════════════════════════════════════════════════════════════════
+with tab7:
+    st.markdown('<div class="section-title">שאלה 7 — דפוסי הזמנות לאורך זמן</div>',
+                unsafe_allow_html=True)
+
+    fdf7 = fdf.copy()
+    fdf7['DayOfWeek'] = fdf7['OrderDate'].dt.dayofweek
+    fdf7['Week']      = fdf7['OrderDate'].dt.to_period('W').astype(str)
+    fdf7['Hour']      = fdf7['OrderDate'].dt.hour
+    fdf7['Date']      = fdf7['OrderDate'].dt.date
+
+    # ── מדדי סיכום ──────────────────────────────────────────────
+    daily7 = fdf7.groupby('Date').agg(orders=('Id','count')).reset_index()
+    avg_d  = daily7['orders'].mean()
+    peak_d = daily7.loc[daily7['orders'].idxmax()]
+    min_d  = daily7.loc[daily7['orders'].idxmin()]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric('ממוצע הזמנות יומי',   f'{avg_d:.0f}')
+    c2.metric('יום שיא',             f'{peak_d["orders"]} ({peak_d["Date"]})')
+    c3.metric('יום שפל',             f'{min_d["orders"]} ({min_d["Date"]})')
+    c4.metric('הירידה הגדולה ביותר', '-40.1% (11–17 מרץ)')
+
+    st.markdown('---')
+
+    # ── גרף 1: מגמה שבועית ──────────────────────────────────────
+    weekly7 = fdf7.groupby('Week').agg(
+        orders=('Id','count'),
+        delivered=('delivered','sum'),
+        revenue=('Price','sum'),
+    ).reset_index()
+    weekly7['delivery_rate'] = (weekly7['delivered'] / weekly7['orders'] * 100).round(1)
+    weekly7['aov']           = (weekly7['revenue'] / weekly7['orders']).round(2)
+    weekly7['wow_pct']       = weekly7['orders'].pct_change() * 100
+
+    anomaly_weeks = ['2024-03-11/2024-03-17', '2024-04-08/2024-04-14']
+    weekly7['is_anomaly'] = weekly7['Week'].isin(anomaly_weeks)
+
+    col_l, col_r = st.columns(2)
+    with col_l:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=weekly7['Week'], y=weekly7['orders'],
+            marker_color=[C_RED if a else C_ACCENT for a in weekly7['is_anomaly']],
+            name='הזמנות', opacity=0.85,
+        ))
+        for w in anomaly_weeks:
+            if w in weekly7['Week'].values:
+                fig.add_annotation(
+                    x=w, y=weekly7[weekly7['Week']==w]['orders'].values[0],
+                    text='⚠', showarrow=False, yshift=12, font_size=16,
+                )
+        fig.update_layout(
+            title='נפח הזמנות שבועי (אדום = שבועות אנומליה)',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            xaxis_title='שבוע', yaxis_title='הזמנות', height=320,
+        )
+        fig.update_xaxes(tickangle=45)
+        st.plotly_chart(fig, width='stretch')
+
+    with col_r:
+        fig2 = make_subplots(specs=[[{'secondary_y': True}]])
+        fig2.add_trace(go.Scatter(
+            x=weekly7['Week'], y=weekly7['delivery_rate'],
+            mode='lines+markers', name='שיעור מסירה %',
+            line=dict(color=C_GREEN, width=2),
+        ), secondary_y=False)
+        fig2.add_trace(go.Scatter(
+            x=weekly7['Week'], y=weekly7['aov'],
+            mode='lines+markers', name='AOV (₪)',
+            line=dict(color=C_GOLD, width=2, dash='dot'),
+        ), secondary_y=True)
+        fig2.update_layout(
+            title='שיעור מסירה ו-AOV שבועי',
+            title_font_color=C_BLUE, plot_bgcolor='white', height=320,
+            legend=dict(orientation='h', y=-0.3),
+        )
+        fig2.update_xaxes(tickangle=45)
+        fig2.update_yaxes(title_text='מסירה %', secondary_y=False)
+        fig2.update_yaxes(title_text='AOV ₪', secondary_y=True)
+        st.plotly_chart(fig2, width='stretch')
+
+    # ── גרף 2: דפוס יום בשבוע ──────────────────────────────────
+    st.markdown('---')
+    st.markdown('#### דפוס לפי יום בשבוע')
+
+    days_heb = {0:'שני', 1:'שלישי', 2:'רביעי', 3:'חמישי', 4:'שישי', 5:'שבת', 6:'ראשון'}
+    dow7 = fdf7.groupby('DayOfWeek').agg(
+        orders=('Id','count'),
+        delivered=('delivered','sum'),
+        revenue=('Price','sum'),
+    ).reset_index()
+    dow7['delivery_rate'] = (dow7['delivered'] / dow7['orders'] * 100).round(1)
+    dow7['aov']           = (dow7['revenue'] / dow7['orders']).round(2)
+    n_weeks = fdf7['Week'].nunique()
+    dow7['daily_avg']     = (dow7['orders'] / n_weeks).round(1)
+    dow7['DayName']       = dow7['DayOfWeek'].map(days_heb)
+
+    col_l2, col_r2 = st.columns(2)
+    with col_l2:
+        bar_colors = [C_RED if d == 5 else (C_GREEN if d == 6 else C_ACCENT)
+                      for d in dow7['DayOfWeek']]
+        fig3 = go.Figure(go.Bar(
+            x=dow7['DayName'], y=dow7['daily_avg'],
+            marker_color=bar_colors, text=dow7['daily_avg'],
+            texttemplate='%{text:.0f}', textposition='outside',
+        ))
+        fig3.update_layout(
+            title='ממוצע הזמנות יומי לפי יום בשבוע | אדום=שבת (שיא) | ירוק=ראשון',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            xaxis_title='יום', yaxis_title='ממוצע הזמנות', height=320,
+        )
+        st.plotly_chart(fig3, width='stretch')
+
+    with col_r2:
+        fig4 = go.Figure()
+        fig4.add_trace(go.Bar(
+            x=dow7['DayName'], y=dow7['delivery_rate'],
+            marker_color=C_GREEN, name='שיעור מסירה %', opacity=0.8,
+            text=dow7['delivery_rate'], texttemplate='%{text:.1f}%',
+            textposition='outside',
+        ))
+        fig4.update_layout(
+            title='שיעור מסירה לפי יום בשבוע | ראשון = הטוב ביותר (67.5%)',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            xaxis_title='יום', yaxis_title='% מסירה', height=320, yaxis_range=[50, 80],
+        )
+        st.plotly_chart(fig4, width='stretch')
+
+    # ── גרף 3: שעת שיא לפי חודש ──────────────────────────────
+    st.markdown('---')
+    st.markdown('#### שעת שיא לפי חודש וחלוקה שעתית')
+
+    col_l3, col_r3 = st.columns(2)
+    with col_l3:
+        hour7 = fdf7.groupby('Hour').size().reset_index(name='הזמנות')
+        fig5 = px.bar(hour7, x='Hour', y='הזמנות',
+                      color_discrete_sequence=[C_ACCENT],
+                      title='פיזור הזמנות לפי שעה (כלל התקופה)',
+                      text='הזמנות')
+        fig5.update_traces(textposition='outside')
+        fig5.update_layout(title_font_color=C_BLUE, plot_bgcolor='white',
+                           xaxis_title='שעה', height=320)
+        st.plotly_chart(fig5, width='stretch')
+
+    with col_r3:
+        st.markdown('**שעת שיא לפי חודש:**')
+        for month in sorted(fdf7['Month'].unique()):
+            mdf    = fdf7[fdf7['Month'] == month]
+            peak_h = mdf.groupby('Hour').size().idxmax()
+            peak_v = mdf.groupby('Hour').size().max()
+            st.markdown(f'- **{month}**: שעה **{peak_h}:00** ({peak_v} הזמנות)')
+
+        st.markdown('---')
+        st.info('💡 **אנומליה**: שעת השיא הוזזה מ-20:00 (פברואר) ל-21:00 (מרץ ואילך) — ייתכן שקשורה לרמדאן ולפטאר (שבירת הצום)')
+
+    # ── טבלת אנומליות ────────────────────────────────────────────
+    st.markdown('---')
+    st.markdown('#### שבועות אנומליה מרכזיים')
+    anomaly_data = {
+        'שבוע': ['11–17 מרץ', '8–14 אפריל'],
+        'הזמנות': [1134, 1573],
+        'שינוי WoW': ['-40.1%', '+15.4%'],
+        'מסירה %': ['72.2%', '48.4%'],
+        'AOV ₪': ['106.73', '128.86'],
+        'הסבר': ['תחילת רמדאן 2024 (11 מרץ)', 'תקיפת איראן? (13 אפריל 2024)'],
+    }
+    st.dataframe(pd.DataFrame(anomaly_data), width='stretch', hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 8 — איכות נתונים (Q8)
+# ══════════════════════════════════════════════════════════════════
+with tab8:
+    st.markdown('<div class="section-title">שאלה 8 — בדיקת איכות נתונים: payment_methods_user</div>',
+                unsafe_allow_html=True)
+
+    import os as _os
+    _PATH = _os.path.join(_os.path.dirname(__file__), 'HAAT_DA_Dataset.xlsx')
+    pm8 = pd.read_excel(_PATH, sheet_name='payment_methods_user')
+
+    # ── מדדי סיכום ──────────────────────────────────────────────
+    n_rows      = len(pm8)
+    n_users_pm  = pm8['UserId'].nunique()
+    n_dup_tok   = pm8['Token'].duplicated().sum()
+    n_uniq_tok  = pm8['Token'].nunique()
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric('שורות בטבלה',        f'{n_rows:,}')
+    c2.metric('משתמשים ייחודיים',   f'{n_users_pm:,}')
+    c3.metric('טוקנים כפולים',      f'{n_dup_tok:,}', delta='⚠ בעיה')
+    c4.metric('טוקנים ייחודיים',    f'{n_uniq_tok:,}')
+
+    st.markdown('---')
+
+    # ── גרף 1: פיזור טוקנים ללקוח ──────────────────────────────
+    col_l, col_r = st.columns(2)
+
+    tpu8 = pm8.groupby('UserId')['Token'].count().reset_index(name='token_count')
+
+    with col_l:
+        bins_data = tpu8['token_count'].value_counts().sort_index().reset_index()
+        bins_data.columns = ['מספר טוקנים', 'לקוחות']
+        bins_data = bins_data[bins_data['מספר טוקנים'] <= 20]
+        fig = px.bar(bins_data, x='מספר טוקנים', y='לקוחות',
+                     color_discrete_sequence=[C_ACCENT],
+                     title='פיזור טוקנים לכל לקוח (עד 20)',
+                     text='לקוחות')
+        fig.update_traces(textposition='outside')
+        fig.update_layout(title_font_color=C_BLUE, plot_bgcolor='white', height=350)
+        st.plotly_chart(fig, width='stretch')
+
+    with col_r:
+        buckets = [
+            ('1 טוקן',    (tpu8['token_count']==1).sum()),
+            ('2 טוקנים',  (tpu8['token_count']==2).sum()),
+            ('3 טוקנים',  (tpu8['token_count']==3).sum()),
+            ('4 טוקנים',  (tpu8['token_count']==4).sum()),
+            ('5–9 טוקנים', ((tpu8['token_count']>=5) & (tpu8['token_count']<10)).sum()),
+            ('10–49 טוקנים', ((tpu8['token_count']>=10) & (tpu8['token_count']<50)).sum()),
+            ('50+ טוקנים', (tpu8['token_count']>=50).sum()),
+        ]
+        bdf = pd.DataFrame(buckets, columns=['קבוצה','לקוחות'])
+        fig2 = px.pie(bdf, names='קבוצה', values='לקוחות', hole=0.35,
+                      title='פיזור לקוחות לפי קבוצת טוקנים',
+                      color_discrete_sequence=px.colors.sequential.Blues_r)
+        fig2.update_traces(textposition='inside', textinfo='label+percent')
+        fig2.update_layout(title_font_color=C_BLUE, height=350)
+        st.plotly_chart(fig2, width='stretch')
+
+    # ── גרף 2: TOP חשודים ──────────────────────────────────────
+    st.markdown('---')
+    st.markdown('#### TOP 10 לקוחות חשודים — מספר טוקנים גבוה מול מספר הזמנות נמוך')
+
+    top10 = tpu8.nlargest(10, 'token_count').copy()
+    top10['orders'] = top10['UserId'].apply(lambda uid: (fdf['UserId']==uid).sum())
+
+    col_l2, col_r2 = st.columns([3, 2])
+    with col_l2:
+        fig3 = go.Figure()
+        fig3.add_trace(go.Bar(
+            name='טוקנים', x=top10['UserId'].astype(str), y=top10['token_count'],
+            marker_color=C_RED, text=top10['token_count'],
+            textposition='outside',
+        ))
+        fig3.add_trace(go.Bar(
+            name='הזמנות', x=top10['UserId'].astype(str), y=top10['orders'],
+            marker_color=C_ACCENT, text=top10['orders'],
+            textposition='outside',
+        ))
+        fig3.update_layout(
+            title='TOP 10 לקוחות: טוקנים vs הזמנות',
+            barmode='group', title_font_color=C_BLUE,
+            plot_bgcolor='white', height=350,
+            xaxis_title='UserId', yaxis_title='ספירה',
+        )
+        st.plotly_chart(fig3, width='stretch')
+
+    with col_r2:
+        top10_disp = top10[['UserId','token_count','orders']].copy()
+        top10_disp.columns = ['UserId','טוקנים','הזמנות']
+        top10_disp['יחס'] = (top10_disp['טוקנים'] / (top10_disp['הזמנות'].clip(lower=1))).round(0).astype(int)
+        st.dataframe(top10_disp, width='stretch', hide_index=True)
+        st.error('⚠ UserId 11344: 161 טוקנים, 2 הזמנות בלבד — חשד ל-Card Testing!')
+
+    # ── גרף 3: קרוס-רפרנס עם הזמנות ────────────────────────────
+    st.markdown('---')
+    st.markdown('#### קרוס-רפרנס: לקוחות בהזמנות מול payment_methods_user')
+
+    users_pm_set  = set(pm8['UserId'])
+    users_ord_set = set(fdf['UserId'].dropna())
+    cash_users    = set(fdf[fdf['PaymentMethod']==0]['UserId'].dropna())
+    credit_users  = set(fdf[fdf['PaymentMethod']==1]['UserId'].dropna())
+
+    cross_data = {
+        'קבוצה': [
+            'בשתי הטבלאות',
+            'רק ב-payment (לא הזמינו)',
+            'רק בהזמנות (אין טוקן)',
+            'מזומן עם טוקן',
+            'אשראי ללא טוקן ⚠',
+            'מזומן + אשראי (גמישים)',
+        ],
+        'מספר לקוחות': [
+            len(users_pm_set & users_ord_set),
+            len(users_pm_set - users_ord_set),
+            len(users_ord_set - users_pm_set),
+            len(cash_users & users_pm_set),
+            len(credit_users - users_pm_set),
+            len(cash_users & credit_users),
+        ],
+    }
+    cdf = pd.DataFrame(cross_data)
+    col_l3, col_r3 = st.columns([3, 2])
+    with col_l3:
+        fig4 = px.bar(cdf, x='מספר לקוחות', y='קבוצה', orientation='h',
+                      color_discrete_sequence=[C_ACCENT],
+                      title='פיזור לקוחות לפי קשר לטבלת payment',
+                      text='מספר לקוחות')
+        fig4.update_traces(textposition='outside')
+        fig4.update_layout(title_font_color=C_BLUE, plot_bgcolor='white', height=350)
+        st.plotly_chart(fig4, width='stretch')
+
+    with col_r3:
+        st.dataframe(cdf, width='stretch', hide_index=True)
+        st.info(f'💡 {len(credit_users - users_pm_set)} לקוחות שילמו אשראי ואין להם טוקן — ייתכן תשלום דרך ספק חיצוני')
+
+    # ── סיכום איכות נתונים ──────────────────────────────────────
+    st.markdown('---')
+    quality_data = {
+        'בדיקה': [
+            'ערכים חסרים', 'תקינות פורמט Token',
+            'טוקנים כפולים', 'לקוחות עם 50+ טוקנים',
+            'אשראי ללא טוקן',
+        ],
+        'תוצאה': [
+            '✅ 0 חסרים',
+            '✅ כל הטוקנים TOK_XXXXXXXX',
+            f'⚠ {n_dup_tok:,} כפולים',
+            f'⚠ {(tpu8["token_count"]>=50).sum()} לקוחות',
+            f'⚠ {len(credit_users - users_pm_set)} לקוחות',
+        ],
+        'דחיפות': ['נמוכה', 'נמוכה', 'גבוהה', 'גבוהה מאוד', 'בינונית'],
+    }
+    st.dataframe(pd.DataFrame(quality_data), width='stretch', hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 10 — בונוס: חישוב בונוסים לשליחים (Q10)
+# ══════════════════════════════════════════════════════════════════
+with tab10:
+    st.markdown('<div class="section-title">שאלה 10 (בונוס) — חישוב בונוסים שבועיים לשליחים</div>',
+                unsafe_allow_html=True)
+
+    # ── חוקי הבונוס ────────────────────────────────────────────────
+    st.markdown('#### חוקי הבונוס לפי אזור')
+    rules_data = {
+        'AreaId': [1, 4, 10],
+        'תנאי ימים': ['סוף שבוע בלבד (שישי+שבת)', 'כל ימות השבוע', 'סוף שבוע בלבד (שישי+שבת)'],
+        'חוק הבונוס': [
+            'כל 50 מסירות → 100 ₪',
+            'כל מסירה מעל ה-300 → 3 ₪/מסירה',
+            'כל 50 מסירות → 150 ₪',
+        ],
+    }
+    st.dataframe(pd.DataFrame(rules_data), width='stretch', hide_index=True)
+
+    st.markdown('---')
+
+    # ── הפונקציה ───────────────────────────────────────────────────
+    with st.expander('📝 קוד הפונקציה calc_weekly_bonus()', expanded=False):
+        st.code("""
+def calc_weekly_bonus(orders_df, week_start, week_end):
+    ws = pd.Timestamp(week_start)
+    we = pd.Timestamp(week_end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+
+    w = orders_df[
+        (orders_df['OrderDate'] >= ws) & (orders_df['OrderDate'] <= we) &
+        (orders_df['delivered'] == True) & (orders_df['DriverId'].notna())
+    ].copy()
+
+    results = []
+
+    # AreaId 1 — סוף שבוע, 100 ₪ לכל 50 מסירות
+    a1 = w[(w['AreaId'] == 1) & (w['IsWeekend'] == True)]
+    g1 = a1.groupby('DriverId').size().reset_index(name='TotalDelivered')
+    g1['AreaId'] = 1
+    g1['BonusAmount'] = (g1['TotalDelivered'] // 50) * 100
+    results.append(g1)
+
+    # AreaId 4 — כל הימים, 3 ₪ מעל מסירה 300
+    a4 = w[w['AreaId'] == 4]
+    g4 = a4.groupby('DriverId').size().reset_index(name='TotalDelivered')
+    g4['AreaId'] = 4
+    g4['BonusAmount'] = g4['TotalDelivered'].apply(lambda n: max(0, n - 300) * 3)
+    results.append(g4)
+
+    # AreaId 10 — סוף שבוע, 150 ₪ לכל 50 מסירות
+    a10 = w[(w['AreaId'] == 10) & (w['IsWeekend'] == True)]
+    g10 = a10.groupby('DriverId').size().reset_index(name='TotalDelivered')
+    g10['AreaId'] = 10
+    g10['BonusAmount'] = (g10['TotalDelivered'] // 50) * 150
+    results.append(g10)
+
+    result = pd.concat(results, ignore_index=True)
+    return result[result['BonusAmount'] > 0][
+        ['DriverId', 'AreaId', 'TotalDelivered', 'BonusAmount']
+    ].sort_values(['AreaId', 'BonusAmount'], ascending=[True, False]).reset_index(drop=True)
+""", language='python')
+
+    # ── בחירת שבוע ─────────────────────────────────────────────────
+    st.markdown('#### הרץ את הפונקציה — בחר שבוע')
+
+    fdf10 = fdf.copy()
+    fdf10['DayOfWeek'] = fdf10['OrderDate'].dt.dayofweek
+    fdf10['IsWeekend'] = fdf10['DayOfWeek'].isin([4, 5])
+    fdf10['delivered'] = fdf10['ArriveDate'].notna()
+    fdf10['Week']      = fdf10['OrderDate'].dt.to_period('W').astype(str)
+
+    all_weeks10 = sorted(fdf10['Week'].dropna().unique())
+    sel_week = st.selectbox('בחר שבוע', all_weeks10,
+                            index=len(all_weeks10)//2 if all_weeks10 else 0)
+
+    def calc_weekly_bonus(orders_df, week_start, week_end):
+        ws = pd.Timestamp(week_start)
+        we = pd.Timestamp(week_end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        w = orders_df[
+            (orders_df['OrderDate'] >= ws) & (orders_df['OrderDate'] <= we) &
+            (orders_df['delivered'] == True) & (orders_df['DriverId'].notna())
+        ].copy()
+        results = []
+        a1 = w[(w['AreaId'] == 1) & (w['IsWeekend'] == True)]
+        g1 = a1.groupby('DriverId').size().reset_index(name='TotalDelivered')
+        g1['AreaId'] = 1
+        g1['BonusAmount'] = (g1['TotalDelivered'] // 50) * 100
+        results.append(g1)
+        a4 = w[w['AreaId'] == 4]
+        g4 = a4.groupby('DriverId').size().reset_index(name='TotalDelivered')
+        g4['AreaId'] = 4
+        g4['BonusAmount'] = g4['TotalDelivered'].apply(lambda n: max(0, n - 300) * 3)
+        results.append(g4)
+        a10 = w[(w['AreaId'] == 10) & (w['IsWeekend'] == True)]
+        g10 = a10.groupby('DriverId').size().reset_index(name='TotalDelivered')
+        g10['AreaId'] = 10
+        g10['BonusAmount'] = (g10['TotalDelivered'] // 50) * 150
+        results.append(g10)
+        result = pd.concat(results, ignore_index=True)
+        bonus = result[result['BonusAmount'] > 0][
+            ['DriverId', 'AreaId', 'TotalDelivered', 'BonusAmount']
+        ].sort_values(['AreaId', 'BonusAmount'], ascending=[True, False]).reset_index(drop=True)
+        if len(bonus):
+            bonus['DriverId'] = bonus['DriverId'].astype(int)
+        return bonus
+
+    if sel_week:
+        parts   = sel_week.split('/')
+        ws_date = parts[0]
+        we_date = parts[1]
+        bonus_result = calc_weekly_bonus(fdf10, ws_date, we_date)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric('נהגים שזכו לבונוס', len(bonus_result))
+        c2.metric('סה"כ בונוסים',
+                  f'₪{bonus_result["BonusAmount"].sum():,.0f}' if len(bonus_result) else '₪0')
+        c3.metric('שבוע שנבחר', sel_week)
+
+        if len(bonus_result) == 0:
+            st.warning(f'בשבוע {sel_week} — אף נהג לא עמד בסף הבונוס. ראה ניתוח מתחת.')
+        else:
+            st.success(f'נמצאו {len(bonus_result)} נהגים עם בונוס בשבוע זה!')
+            st.dataframe(bonus_result, width='stretch', hide_index=True)
+
+    st.markdown('---')
+
+    # ── ניתוח קירבה לסף ────────────────────────────────────────────
+    st.markdown('#### מדוע אף נהג לא מגיע לסף? — ניתוח קירבה לבונוס')
+
+    fdf10['wk'] = fdf10['OrderDate'].dt.to_period('W').astype(str)
+
+    # AreaId 1 — weekend deliveries per driver per week
+    a1_all = fdf10[(fdf10['AreaId']==1) & fdf10['delivered'] & fdf10['IsWeekend'] & fdf10['DriverId'].notna()]
+    a4_all = fdf10[(fdf10['AreaId']==4) & fdf10['delivered'] & fdf10['DriverId'].notna()]
+    a10_all = fdf10[(fdf10['AreaId']==10) & fdf10['delivered'] & fdf10['IsWeekend'] & fdf10['DriverId'].notna()]
+
+    col_l, col_r = st.columns(2)
+
+    with col_l:
+        threshold_data = {
+            'אזור': ['AreaId 1', 'AreaId 4', 'AreaId 10'],
+            'סף בונוס': [50, 300, 50],
+            'מקסימום בפועל (שבוע בודד)': [
+                a1_all.groupby(['wk','DriverId']).size().max() if len(a1_all) else 0,
+                a4_all.groupby(['wk','DriverId']).size().max() if len(a4_all) else 0,
+                a10_all.groupby(['wk','DriverId']).size().max() if len(a10_all) else 0,
+            ],
+        }
+        tdf = pd.DataFrame(threshold_data)
+        tdf['% מהסף'] = (tdf['מקסימום בפועל (שבוע בודד)'] / tdf['סף בונוס'] * 100).round(1).astype(str) + '%'
+        st.dataframe(tdf, width='stretch', hide_index=True)
+
+    with col_r:
+        fig_thresh = go.Figure()
+        fig_thresh.add_trace(go.Bar(
+            name='סף בונוס',
+            x=['AreaId 1', 'AreaId 4', 'AreaId 10'],
+            y=[50, 300, 50],
+            marker_color=C_RED, opacity=0.6,
+        ))
+        fig_thresh.add_trace(go.Bar(
+            name='מקסימום בפועל',
+            x=['AreaId 1', 'AreaId 4', 'AreaId 10'],
+            y=[
+                a1_all.groupby(['wk','DriverId']).size().max() if len(a1_all) else 0,
+                a4_all.groupby(['wk','DriverId']).size().max() if len(a4_all) else 0,
+                a10_all.groupby(['wk','DriverId']).size().max() if len(a10_all) else 0,
+            ],
+            marker_color=C_ACCENT,
+        ))
+        fig_thresh.update_layout(
+            title='סף בונוס vs מקסימום בפועל (שבוע בודד)',
+            barmode='group', title_font_color=C_BLUE,
+            plot_bgcolor='white', height=320,
+        )
+        st.plotly_chart(fig_thresh, width='stretch')
+
+    # ── TOP נהגים קרובים ביותר ─────────────────────────────────────
+    st.markdown('---')
+    st.markdown('#### TOP נהגים — הכי קרובים לבונוס (כל התקופה)')
+
+    col_a, col_b, col_c = st.columns(3)
+
+    with col_a:
+        st.markdown('**AreaId 1 — סוף שבוע**')
+        if len(a1_all):
+            top_a1 = a1_all.groupby('DriverId').size().reset_index(name='מסירות_סה"כ')
+            top_a1 = top_a1.nlargest(5, 'מסירות_סה"כ')
+            top_a1['DriverId'] = top_a1['DriverId'].astype(int)
+            top_a1['% מסף 50'] = (top_a1['מסירות_סה"כ'] / 50 * 100).round(0).astype(int).astype(str) + '%'
+            st.dataframe(top_a1, width='stretch', hide_index=True)
+        st.caption('סף: 50 מסירות/שבוע → 100 ₪')
+
+    with col_b:
+        st.markdown('**AreaId 4 — כל הימים**')
+        if len(a4_all):
+            top_a4 = a4_all.groupby('DriverId').size().reset_index(name='מסירות_סה"כ')
+            top_a4 = top_a4.nlargest(5, 'מסירות_סה"כ')
+            top_a4['DriverId'] = top_a4['DriverId'].astype(int)
+            top_a4['% מסף 300'] = (top_a4['מסירות_סה"כ'] / 300 * 100).round(0).astype(int).astype(str) + '%'
+            st.dataframe(top_a4, width='stretch', hide_index=True)
+        st.caption('סף: 300 מסירות/שבוע → 3 ₪/מסירה')
+
+    with col_c:
+        st.markdown('**AreaId 10 — סוף שבוע**')
+        if len(a10_all):
+            top_a10 = a10_all.groupby('DriverId').size().reset_index(name='מסירות_סה"כ')
+            top_a10 = top_a10.nlargest(5, 'מסירות_סה"כ')
+            top_a10['DriverId'] = top_a10['DriverId'].astype(int)
+            top_a10['% מסף 50'] = (top_a10['מסירות_סה"כ'] / 50 * 100).round(0).astype(int).astype(str) + '%'
+            st.dataframe(top_a10, width='stretch', hide_index=True)
+        st.caption('סף: 50 מסירות/שבוע → 150 ₪')
+
+    st.error('⚠ אף נהג לא הגיע לסף הבונוס בשבוע בודד. הספים גבוהים פי 3–15 מהמקסימום בפועל.')
+    st.info('💡 המלצה: לכייל את הספים ל-10–15 מסירות לאזורי 1/10, ו-15 מסירות לאזור 4 — תכנית הבונוסים תהפוך אפקטיבית.')
