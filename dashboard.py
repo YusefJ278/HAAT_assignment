@@ -106,7 +106,7 @@ st.markdown(f"""
 # ══════════════════════════════════════════════════════════════════
 # טאבים
 # ══════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab10 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     '📊 מבט כללי (Q1)',
     '🎯 מדדי KPI (Q2)',
     '🚚 אמינות משלוחים (Q3)',
@@ -115,6 +115,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab10 = st.tabs([
     '🔄 שימור לקוחות (Q6)',
     '📅 דפוסי זמן (Q7)',
     '🔍 איכות נתונים (Q8)',
+    '🎤 פרזנטציה (Q9)',
     '🎁 בונוס: בונוסים לשליחים (Q10)',
 ])
 
@@ -1053,6 +1054,169 @@ with tab8:
         'דחיפות': ['נמוכה', 'נמוכה', 'גבוהה', 'גבוהה מאוד', 'בינונית'],
     }
     st.dataframe(pd.DataFrame(quality_data), width='stretch', hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 9 — פרזנטציה (Q9)
+# ══════════════════════════════════════════════════════════════════
+with tab9:
+    st.markdown('<div class="section-title">שאלה 9 — הפרזנטציה: ממצאים מרכזיים להנהגה</div>',
+                unsafe_allow_html=True)
+
+    # ── שקופית 1: הממצא הכי חשוב ──────────────────────────────────
+    st.markdown("""
+    <div style="background:#1A376C; color:white; border-radius:12px; padding:24px 28px; margin-bottom:20px;">
+      <div style="font-size:0.85rem; color:#ADD8E6; margin-bottom:8px;">שקופית 1 — הממצא החשוב ביותר</div>
+      <div style="font-size:1.4rem; font-weight:bold; line-height:1.5;">
+        1 מתוך 3 הזמנות לא מגיעה ללקוח —<br>
+        וזה לא בעיה של ביקוש, זו בעיה של היצע שליחים
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric('שיעור מסירה כולל', '66.1%', delta='-33.9% לא נמסרו', delta_color='inverse')
+    c2.metric('הזמנות שנאבדו', '9,716', delta='₪1.16M פוטנציאל')
+    c3.metric('מסירה בשבת (שיא ביקוש)', '63.1%', delta='vs 67.5% בראשון', delta_color='inverse')
+
+    st.markdown('---')
+
+    # ── שקופית 2: 3 מספרים ─────────────────────────────────────────
+    st.markdown('#### 📊 שלושה מספרים שמספרים את הסיפור')
+
+    col_l, col_r = st.columns([2, 3])
+    with col_l:
+        numbers_data = {
+            'מדד': ['שיעור מסירה כולל', 'מסירה בשבת', 'מסירה בשבוע 8–14 אפריל'],
+            'ערך': ['66.1%', '63.1%', '48.4%'],
+            'משמעות': [
+                '9,716 הזמנות שלא הגיעו',
+                'יום שיא בנפח = יום שפל במסירה',
+                'שפל מוחלט — כמעט 1 מ-2 נפל',
+            ],
+        }
+        st.dataframe(pd.DataFrame(numbers_data), width='stretch', hide_index=True)
+
+    with col_r:
+        # גרף: נפח vs מסירה לפי יום
+        fdf9 = fdf.copy()
+        fdf9['DayOfWeek'] = fdf9['OrderDate'].dt.dayofweek
+        fdf9['Week'] = fdf9['OrderDate'].dt.to_period('W').astype(str)
+        days_map = {0:'שני',1:'שלישי',2:'רביעי',3:'חמישי',4:'שישי',5:'שבת',6:'ראשון'}
+        dow9 = fdf9.groupby('DayOfWeek').agg(
+            orders=('Id','count'),
+            delivered=('delivered','sum'),
+        ).reset_index()
+        dow9['delivery_rate'] = (dow9['delivered'] / dow9['orders'] * 100).round(1)
+        n_weeks9 = fdf9['Week'].nunique()
+        dow9['daily_avg'] = (dow9['orders'] / n_weeks9).round(1)
+        dow9['DayName'] = dow9['DayOfWeek'].map(days_map)
+
+        fig9 = make_subplots(specs=[[{'secondary_y': True}]])
+        fig9.add_trace(go.Bar(
+            x=dow9['DayName'], y=dow9['daily_avg'],
+            name='ממוצע הזמנות/יום',
+            marker_color=[C_RED if d==5 else C_ACCENT for d in dow9['DayOfWeek']],
+            opacity=0.75,
+        ), secondary_y=False)
+        fig9.add_trace(go.Scatter(
+            x=dow9['DayName'], y=dow9['delivery_rate'],
+            name='מסירה %', mode='lines+markers',
+            line=dict(color=C_GREEN, width=3),
+            marker=dict(size=8),
+        ), secondary_y=True)
+        fig9.update_layout(
+            title='ביקוש vs מסירה לפי יום | שבת: שיא ביקוש, שפל מסירה',
+            title_font_color=C_BLUE, plot_bgcolor='white', height=300,
+            legend=dict(orientation='h', y=-0.3),
+        )
+        fig9.update_yaxes(title_text='הזמנות/יום', secondary_y=False)
+        fig9.update_yaxes(title_text='מסירה %', secondary_y=True, range=[55, 75])
+        st.plotly_chart(fig9, width='stretch')
+
+    st.markdown('---')
+
+    # ── שקופית 3: ממצא מפתיע ──────────────────────────────────────
+    st.markdown('#### 😮 ממצא שהפתיע אותי')
+    st.markdown("""
+    <div style="background:#F0F4FF; border-right:4px solid #2674C1; border-radius:8px; padding:16px 20px; margin-bottom:16px;">
+      <b style="font-size:1.1rem;">57.6% מלקוחות המזומן רשמו כרטיס אשראי — ובחרו לשלם מזומן בכל זאת</b><br><br>
+      9,190 לקוחות שמספיק סומכים על HAAT כדי לשמור כרטיס, אבל בוחרים מזומן.
+      זה לא לקוחות שחוששים מהפלטפורמה — הם כבר מחוברים.
+      עם קמפיין ממוקד (קאשבק, הנחה בתשלום ראשון באשראי) ניתן להמיר אותם,
+      מה שישפר מעקב, מדידה ואפשרות לתכנית נאמנות.
+    </div>
+    """, unsafe_allow_html=True)
+
+    import os as _os9
+    _PATH9 = _os9.path.join(_os9.path.dirname(__file__), 'HAAT_DA_Dataset.xlsx')
+    pm9 = pd.read_excel(_PATH9, sheet_name='payment_methods_user')
+    users_pm9   = set(pm9['UserId'])
+    cash_u9     = set(fdf[fdf['PaymentMethod']==0]['UserId'].dropna())
+    credit_u9   = set(fdf[fdf['PaymentMethod']==1]['UserId'].dropna())
+    cash_w_tok  = len(cash_u9 & users_pm9)
+    cash_pct9   = cash_w_tok / len(cash_u9) * 100 if cash_u9 else 0
+
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric('לקוחות מזומן עם כרטיס רשום', f'{cash_w_tok:,}', f'{cash_pct9:.1f}% מכלל משלמי מזומן')
+    col_b.metric('לקוחות אשראי ללא טוקן', f'{len(credit_u9 - users_pm9)}', 'ייתכן ספק חיצוני')
+    col_c.metric('לקוחות גמישים (שניהם)', f'{len(cash_u9 & credit_u9):,}', 'משלמים גם מזומן וגם אשראי')
+
+    st.markdown('---')
+
+    # ── שקופית 4: מה שלא ניתן להסביר ─────────────────────────────
+    st.markdown('#### ❓ מה שלא הצלחתי להסביר לחלוטין')
+    st.warning("""
+    **שבוע 8–14 אפריל: מסירה קרסה ל-48.4% בזמן שהנפח עלה ב-15.4%**
+
+    13 אפריל 2024 — ישראל חוותה תקיפת טילים ומל"טים מאיראן.
+    אם שליחים בחרו לא לצאת, זה מסביר את הקריסה.
+
+    **אבל ללא נתוני פעילות שליחים** (כמה היו online, מתי, מאיפה) — לא ניתן לאשר.
+    הנתון מחייב חקירה: האם HAAT צריכה תוכנית חירום לאירועי ביטחון?
+    """)
+
+    st.markdown('---')
+
+    # ── שקופית 5: המלצה קונקרטית ──────────────────────────────────
+    st.markdown('#### 🎯 המלצה אחת שניתן ליישם השבוע הבא')
+    st.success("""
+    **גייסו 20–30 שליחים ייעודיים לשישי-שבת באזורים 1, 4, 10**
+
+    📌 הצעו בונוס שיפט: +10% על כל מסירה בסוף שבוע
+
+    💰 חישוב ROI:
+    - שיפור של 5% במסירה בשבת = ~68 הזמנות נוספות
+    - בAOV ₪122.76 = **₪8,348 הכנסה נוספת בשבת אחת**
+    - עלות בונוס משוערת: ~₪2,000 → **ROI חיובי מהשבת הראשונה**
+    """)
+
+    st.markdown('---')
+
+    # ── שקופית 6: השאלה שלא נשאלה ────────────────────────────────
+    st.markdown('#### 💡 שאלה שהיה כדאי לשאול (ולא נשאלה)')
+    st.info("""
+    **מהו ה-LTV של לקוח חוזר לעומת לקוח חד-פעמי?**
+
+    הדאטא מראה 42.3% לקוחות חוזרים — אבל לא ידוע:
+    - האם הם מזמינים יותר? שווים יותר? מרוצים יותר?
+    - מה גורם ללקוח לחזור אחרי הזמנה ראשונה?
+
+    **למה זה קריטי:** עלות רכישת לקוח חדש גבוהה פי 5–7 מעלות שימור.
+    אם מסירה כושלת = לקוח שלא חוזר, ה-ROI האמיתי של שיפור שיעור המסירה
+    גבוה בהרבה ממה שמחשבים מהזמנה בודדת.
+
+    **הנתון הנדרש:** Repeat Purchase Rate פר קוהורט, לפי אזור, עסק ושיטת תשלום.
+    """)
+
+    st.markdown('---')
+    st.markdown("""
+    <div style="background:#1B5E20; color:white; border-radius:10px; padding:16px 20px; text-align:center;">
+      <b style="font-size:1.1rem;">
+        HAAT יושבת על ביקוש אמיתי. האתגר: לא לאבד 1 מכל 3 לקוחות בדרך.<br>
+        השליח הוא נקודת הכישלון — והוא גם ההזדמנות הכי גדולה.
+      </b>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 10 — בונוס: חישוב בונוסים לשליחים (Q10)
