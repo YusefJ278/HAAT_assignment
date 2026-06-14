@@ -16,8 +16,24 @@ st.set_page_config(
 # ── CSS: RTL + עיצוב ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    body, .stApp { direction: rtl; }
-    h1, h2, h3, h4, p, div, span, label { direction: rtl; text-align: right; }
+    /* RTL — רק על אזור התוכן הראשי, לא על כל ה-DOM */
+    .block-container { direction: rtl; }
+    .block-container h1, .block-container h2, .block-container h3,
+    .block-container h4, .block-container p, .block-container label {
+        direction: rtl; text-align: right;
+    }
+
+    /* Sidebar — RTL בפנים, אבל לא מפריע לאנימציית הסגירה */
+    [data-testid="stSidebar"] > div:first-child { direction: rtl; }
+    [data-testid="stSidebar"] label { text-align: right; }
+
+    /* כאשר ה-sidebar סגור — הסתר לגמרי */
+    [data-testid="stSidebar"][aria-expanded="false"] {
+        min-width: 0 !important;
+        width: 0 !important;
+        overflow: hidden !important;
+    }
+
     .metric-card {
         background: #F0F4FF;
         border-right: 4px solid #2674C1;
@@ -33,8 +49,6 @@ st.markdown("""
         color: #1A376C; border-bottom: 2px solid #2674C1;
         padding-bottom: 4px; margin-bottom: 12px;
     }
-    [data-testid="stSidebar"] { direction: rtl; }
-    [data-testid="stSidebar"] * { direction: rtl; text-align: right; }
 </style>
 """, unsafe_allow_html=True)
 
