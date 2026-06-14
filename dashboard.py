@@ -151,7 +151,7 @@ with tab1:
         fig.update_traces(textposition='outside')
         fig.update_layout(title_font_color=C_BLUE, xaxis_title='חודש',
                           yaxis_title='מספר הזמנות', plot_bgcolor='white')
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── פיזור אזורי ──────────────────────────────────────────────
     with col_r:
@@ -163,7 +163,7 @@ with tab1:
         fig.update_layout(title_font_color=C_BLUE, yaxis_title='אזור',
                           xaxis_title='מספר הזמנות', plot_bgcolor='white',
                           coloraxis_showscale=False)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('---')
     col_l2, col_r2 = st.columns(2)
@@ -178,7 +178,7 @@ with tab1:
         fig.add_vline(x=fdf['Price'].mean(), line_dash='dash', line_color=C_RED,
                       annotation_text=f'ממוצע: ₪{fdf["Price"].mean():.0f}',
                       annotation_position='top right')
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── שיטת תשלום ───────────────────────────────────────────────
     with col_r2:
@@ -190,7 +190,7 @@ with tab1:
                      title='פיזור שיטות תשלום')
         fig.update_traces(textinfo='label+percent', textfont_size=13)
         fig.update_layout(title_font_color=C_BLUE)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 2 — מדדי KPI
@@ -293,7 +293,7 @@ with tab2:
     fig.update_layout(showlegend=False, plot_bgcolor='white',
                       yaxis_title='ציון (0-100)', title='מדדים מנורמלים (100 = מצוין)',
                       title_font_color=C_BLUE)
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 3 — אמינות משלוחים
@@ -326,7 +326,7 @@ with tab3:
         fig.update_layout(title='שיעור מסירה לפי אזור', title_font_color=C_BLUE,
                           xaxis_title='שיעור מסירה (%)', xaxis_range=[0,115],
                           plot_bgcolor='white', showlegend=False)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── שיעור מסירה לפי חודש ─────────────────────────────────────
     with col_r:
@@ -347,7 +347,7 @@ with tab3:
             yaxis2=dict(title='נפח הזמנות', overlaying='y', side='right'),
             plot_bgcolor='white', legend=dict(orientation='h', y=-0.2),
         )
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── שיעור מסירה לפי שעה ──────────────────────────────────────
     st.markdown('---')
@@ -373,7 +373,7 @@ with tab3:
     )
     fig.update_yaxes(title_text='נפח הזמנות', secondary_y=False)
     fig.update_yaxes(title_text='שיעור מסירה (%)', secondary_y=True, range=[50, 105])
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     # ── טבלת אזורים ──────────────────────────────────────────────
     st.markdown('---')
@@ -387,7 +387,7 @@ with tab3:
         'שיעור דחייה %': lambda x: (x['נדחו']/x['הזמנות']*100).round(1),
     }).sort_values('שיעור מסירה %', ascending=False).reset_index()
     area_tbl.columns.name = None
-    st.dataframe(area_tbl, width='stretch', hide_index=True)
+    st.dataframe(area_tbl, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 4 — יעילות שליחים
@@ -425,7 +425,7 @@ with tab4:
         fig.update_layout(title='TOP 10 — הכי הרבה משלוחים', title_font_color=C_BLUE,
                           xaxis_title='הזמנות שנמסרו', xaxis_range=[0, 270],
                           plot_bgcolor='white')
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── יעילות מנורמלת ───────────────────────────────────────────
     with col_r:
@@ -447,7 +447,7 @@ with tab4:
                           title_font_color=C_BLUE,
                           xaxis_title='משלוחים מוצלחים ליום פעיל',
                           plot_bgcolor='white')
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── התפלגות יעילות ───────────────────────────────────────────
     st.markdown('---')
@@ -469,7 +469,7 @@ with tab4:
                   annotation_text=f'גבול חריגים: {fence:.2f}')
     fig.update_layout(plot_bgcolor='white', title_font_color=C_BLUE,
                       xaxis_title='משלוחים ליום פעיל', yaxis_title='מספר שליחים')
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     # ── טבלה אינטראקטיבית ────────────────────────────────────────
     st.markdown('---')
@@ -482,7 +482,7 @@ with tab4:
             show_df = show_df[show_df['DriverId'] == float(search)]
         except:
             pass
-    st.dataframe(show_df.head(50), width='stretch', hide_index=True)
+    st.dataframe(show_df.head(50), use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 5 — מקורות הכנסה (Q5)
@@ -548,7 +548,7 @@ with tab5:
                       title_font_color=C_BLUE, title_font_size=14)
     fig.update_xaxes(range=[0, 1550], row=1, col=1)
     fig.update_xaxes(range=[0, 120],  row=1, col=2)
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('---')
     col_l, col_r = st.columns(2)
@@ -571,7 +571,7 @@ with tab5:
                                  name='קו מגמה', showlegend=True))
         fig.update_layout(plot_bgcolor='white', title_font_color=C_BLUE,
                           coloraxis_showscale=False)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── TOP 10 עסקים ─────────────────────────────────────────────
     with col_r:
@@ -596,14 +596,14 @@ with tab5:
             title_font_color=C_BLUE, plot_bgcolor='white',
             xaxis_title='הכנסות (אלפי ₪)', xaxis_range=[0, 130],
         )
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── טבלת אזורים ──────────────────────────────────────────────
     st.markdown('---')
     st.markdown('#### טבלת פירוט הכנסות לפי אזור')
     tbl = area_rev[['AreaName','revenue','orders','aov','pct','delivery_rate']].copy()
     tbl.columns = ['אזור','הכנסות (₪)','הזמנות','AOV (₪)','% מסה"כ','שיעור מסירה %']
-    st.dataframe(tbl, width='stretch', hide_index=True)
+    st.dataframe(tbl, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 6 — שימור לקוחות (Q6)
@@ -679,7 +679,7 @@ with tab6:
         fig.update_layout(title='שיעור הזמנות מלקוחות חוזרים לפי אזור',
                           title_font_color=C_BLUE, plot_bgcolor='white',
                           xaxis_title='שיעור לקוחות חוזרים (%)', xaxis_range=[0,45])
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── קוהורט מרץ עוגה ─────────────────────────────────────────
     with col_r:
@@ -696,7 +696,7 @@ with tab6:
             title=f'קוהורט מרץ 2024 — {total_c:,} לקוחות חדשים',
             title_font_color=C_BLUE,
         )
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── שימור 30 יום לפי אזור ────────────────────────────────────
     st.markdown('---')
@@ -718,7 +718,7 @@ with tab6:
         xaxis_title='שיעור שימור תוך 30 יום (%)', xaxis_range=[0, 28],
         height=380,
     )
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     # ── טבלה משולבת ──────────────────────────────────────────────
     st.markdown('---')
@@ -726,7 +726,7 @@ with tab6:
     merged = area_ret.merge(ret_area, on='AreaName', how='left')
     merged = merged[['AreaName','orders','returning','ret_rate','retention_30']].copy()
     merged.columns = ['אזור','הזמנות','חוזרים','% הזמנות חוזרות','שימור 30 יום %']
-    st.dataframe(merged, width='stretch', hide_index=True)
+    st.dataframe(merged, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 7 — דפוסי הזמנות לאורך זמן (Q7)
@@ -788,7 +788,7 @@ with tab7:
             xaxis_title='שבוע', yaxis_title='הזמנות', height=320,
         )
         fig.update_xaxes(tickangle=45)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     with col_r:
         fig2 = make_subplots(specs=[[{'secondary_y': True}]])
@@ -810,7 +810,7 @@ with tab7:
         fig2.update_xaxes(tickangle=45)
         fig2.update_yaxes(title_text='מסירה %', secondary_y=False)
         fig2.update_yaxes(title_text='AOV ₪', secondary_y=True)
-        st.plotly_chart(fig2, width='stretch')
+        st.plotly_chart(fig2, use_container_width=True)
 
     # ── גרף 2: דפוס יום בשבוע ──────────────────────────────────
     st.markdown('---')
@@ -842,7 +842,7 @@ with tab7:
             title_font_color=C_BLUE, plot_bgcolor='white',
             xaxis_title='יום', yaxis_title='ממוצע הזמנות', height=320,
         )
-        st.plotly_chart(fig3, width='stretch')
+        st.plotly_chart(fig3, use_container_width=True)
 
     with col_r2:
         fig4 = go.Figure()
@@ -857,7 +857,7 @@ with tab7:
             title_font_color=C_BLUE, plot_bgcolor='white',
             xaxis_title='יום', yaxis_title='% מסירה', height=320, yaxis_range=[50, 80],
         )
-        st.plotly_chart(fig4, width='stretch')
+        st.plotly_chart(fig4, use_container_width=True)
 
     # ── גרף 3: שעת שיא לפי חודש ──────────────────────────────
     st.markdown('---')
@@ -873,7 +873,7 @@ with tab7:
         fig5.update_traces(textposition='outside')
         fig5.update_layout(title_font_color=C_BLUE, plot_bgcolor='white',
                            xaxis_title='שעה', height=320)
-        st.plotly_chart(fig5, width='stretch')
+        st.plotly_chart(fig5, use_container_width=True)
 
     with col_r3:
         st.markdown('**שעת שיא לפי חודש:**')
@@ -897,7 +897,7 @@ with tab7:
         'AOV ₪': ['106.73', '128.86'],
         'הסבר': ['תחילת רמדאן 2024 (11 מרץ)', 'תקיפת איראן? (13 אפריל 2024)'],
     }
-    st.dataframe(pd.DataFrame(anomaly_data), width='stretch', hide_index=True)
+    st.dataframe(pd.DataFrame(anomaly_data), use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 8 — איכות נתונים (Q8)
@@ -939,7 +939,7 @@ with tab8:
                      text='לקוחות')
         fig.update_traces(textposition='outside')
         fig.update_layout(title_font_color=C_BLUE, plot_bgcolor='white', height=350)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     with col_r:
         buckets = [
@@ -957,7 +957,7 @@ with tab8:
                       color_discrete_sequence=px.colors.sequential.Blues_r)
         fig2.update_traces(textposition='inside', textinfo='label+percent')
         fig2.update_layout(title_font_color=C_BLUE, height=350)
-        st.plotly_chart(fig2, width='stretch')
+        st.plotly_chart(fig2, use_container_width=True)
 
     # ── גרף 2: TOP חשודים ──────────────────────────────────────
     st.markdown('---')
@@ -985,13 +985,13 @@ with tab8:
             plot_bgcolor='white', height=350,
             xaxis_title='UserId', yaxis_title='ספירה',
         )
-        st.plotly_chart(fig3, width='stretch')
+        st.plotly_chart(fig3, use_container_width=True)
 
     with col_r2:
         top10_disp = top10[['UserId','token_count','orders']].copy()
         top10_disp.columns = ['UserId','טוקנים','הזמנות']
         top10_disp['יחס'] = (top10_disp['טוקנים'] / (top10_disp['הזמנות'].clip(lower=1))).round(0).astype(int)
-        st.dataframe(top10_disp, width='stretch', hide_index=True)
+        st.dataframe(top10_disp, use_container_width=True, hide_index=True)
         st.error('⚠ UserId 11344: 161 טוקנים, 2 הזמנות בלבד — חשד ל-Card Testing!')
 
     # ── גרף 3: קרוס-רפרנס עם הזמנות ────────────────────────────
@@ -1030,10 +1030,10 @@ with tab8:
                       text='מספר לקוחות')
         fig4.update_traces(textposition='outside')
         fig4.update_layout(title_font_color=C_BLUE, plot_bgcolor='white', height=350)
-        st.plotly_chart(fig4, width='stretch')
+        st.plotly_chart(fig4, use_container_width=True)
 
     with col_r3:
-        st.dataframe(cdf, width='stretch', hide_index=True)
+        st.dataframe(cdf, use_container_width=True, hide_index=True)
         st.info(f'💡 {len(credit_users - users_pm_set)} לקוחות שילמו אשראי ואין להם טוקן — ייתכן תשלום דרך ספק חיצוני')
 
     # ── סיכום איכות נתונים ──────────────────────────────────────
@@ -1053,7 +1053,7 @@ with tab8:
         ],
         'דחיפות': ['נמוכה', 'נמוכה', 'גבוהה', 'גבוהה מאוד', 'בינונית'],
     }
-    st.dataframe(pd.DataFrame(quality_data), width='stretch', hide_index=True)
+    st.dataframe(pd.DataFrame(quality_data), use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 9 — פרזנטציה (Q9)
@@ -1094,7 +1094,7 @@ with tab9:
                 'שפל מוחלט — כמעט 1 מ-2 נפל',
             ],
         }
-        st.dataframe(pd.DataFrame(numbers_data), width='stretch', hide_index=True)
+        st.dataframe(pd.DataFrame(numbers_data), use_container_width=True, hide_index=True)
 
     with col_r:
         # גרף: נפח vs מסירה לפי יום
@@ -1131,7 +1131,7 @@ with tab9:
         )
         fig9.update_yaxes(title_text='הזמנות/יום', secondary_y=False)
         fig9.update_yaxes(title_text='מסירה %', secondary_y=True, range=[55, 75])
-        st.plotly_chart(fig9, width='stretch')
+        st.plotly_chart(fig9, use_container_width=True)
 
     st.markdown('---')
 
@@ -1236,7 +1236,7 @@ with tab10:
             'כל 50 מסירות → 150 ₪',
         ],
     }
-    st.dataframe(pd.DataFrame(rules_data), width='stretch', hide_index=True)
+    st.dataframe(pd.DataFrame(rules_data), use_container_width=True, hide_index=True)
 
     st.markdown('---')
 
@@ -1341,7 +1341,7 @@ def calc_weekly_bonus(orders_df, week_start, week_end):
             st.warning(f'בשבוע {sel_week} — אף נהג לא עמד בסף הבונוס. ראה ניתוח מתחת.')
         else:
             st.success(f'נמצאו {len(bonus_result)} נהגים עם בונוס בשבוע זה!')
-            st.dataframe(bonus_result, width='stretch', hide_index=True)
+            st.dataframe(bonus_result, use_container_width=True, hide_index=True)
 
     st.markdown('---')
 
@@ -1369,7 +1369,7 @@ def calc_weekly_bonus(orders_df, week_start, week_end):
         }
         tdf = pd.DataFrame(threshold_data)
         tdf['% מהסף'] = (tdf['מקסימום בפועל (שבוע בודד)'] / tdf['סף בונוס'] * 100).round(1).astype(str) + '%'
-        st.dataframe(tdf, width='stretch', hide_index=True)
+        st.dataframe(tdf, use_container_width=True, hide_index=True)
 
     with col_r:
         fig_thresh = go.Figure()
@@ -1394,7 +1394,7 @@ def calc_weekly_bonus(orders_df, week_start, week_end):
             barmode='group', title_font_color=C_BLUE,
             plot_bgcolor='white', height=320,
         )
-        st.plotly_chart(fig_thresh, width='stretch')
+        st.plotly_chart(fig_thresh, use_container_width=True)
 
     # ── TOP נהגים קרובים ביותר ─────────────────────────────────────
     st.markdown('---')
@@ -1409,7 +1409,7 @@ def calc_weekly_bonus(orders_df, week_start, week_end):
             top_a1 = top_a1.nlargest(5, 'מסירות_סה"כ')
             top_a1['DriverId'] = top_a1['DriverId'].astype(int)
             top_a1['% מסף 50'] = (top_a1['מסירות_סה"כ'] / 50 * 100).round(0).astype(int).astype(str) + '%'
-            st.dataframe(top_a1, width='stretch', hide_index=True)
+            st.dataframe(top_a1, use_container_width=True, hide_index=True)
         st.caption('סף: 50 מסירות/שבוע → 100 ₪')
 
     with col_b:
@@ -1419,7 +1419,7 @@ def calc_weekly_bonus(orders_df, week_start, week_end):
             top_a4 = top_a4.nlargest(5, 'מסירות_סה"כ')
             top_a4['DriverId'] = top_a4['DriverId'].astype(int)
             top_a4['% מסף 300'] = (top_a4['מסירות_סה"כ'] / 300 * 100).round(0).astype(int).astype(str) + '%'
-            st.dataframe(top_a4, width='stretch', hide_index=True)
+            st.dataframe(top_a4, use_container_width=True, hide_index=True)
         st.caption('סף: 300 מסירות/שבוע → 3 ₪/מסירה')
 
     with col_c:
@@ -1429,7 +1429,7 @@ def calc_weekly_bonus(orders_df, week_start, week_end):
             top_a10 = top_a10.nlargest(5, 'מסירות_סה"כ')
             top_a10['DriverId'] = top_a10['DriverId'].astype(int)
             top_a10['% מסף 50'] = (top_a10['מסירות_סה"כ'] / 50 * 100).round(0).astype(int).astype(str) + '%'
-            st.dataframe(top_a10, width='stretch', hide_index=True)
+            st.dataframe(top_a10, use_container_width=True, hide_index=True)
         st.caption('סף: 50 מסירות/שבוע → 150 ₪')
 
     st.error('⚠ אף נהג לא הגיע לסף הבונוס בשבוע בודד. הספים גבוהים פי 3–15 מהמקסימום בפועל.')
