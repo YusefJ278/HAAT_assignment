@@ -51,7 +51,8 @@ C_ORANGE = '#E65C00'
 # ══════════════════════════════════════════════════════════════════
 @st.cache_data
 def load_data():
-    PATH = r'C:\Users\Yosef\PycharmProjects\HAAT_assignment\HAAT_DA_Dataset.xlsx'
+    import os
+    PATH = os.path.join(os.path.dirname(__file__), 'HAAT_DA_Dataset.xlsx')
     df    = pd.read_excel(PATH, sheet_name='dataset')
     areas = pd.read_excel(PATH, sheet_name='areas')
     df    = df.merge(areas, on='AreaId', how='left')
