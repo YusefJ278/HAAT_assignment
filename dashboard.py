@@ -5,6 +5,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+#
+#
 # ── הגדרות עמוד ─────────────────────────────────────────────────
 st.set_page_config(
     page_title='HAAT Delivery — דאשבורד ניתוח נתונים',
@@ -414,12 +416,19 @@ with tab4:
     drv = driver_df.groupby('DriverId').agg(
         שובצו=('Id','count'),
         נמסרו=('delivered','sum'),
-        first=('OrderDate','min'),
-        last=('OrderDate','max'),
     ).reset_index()
-    drv['ימים פעילים'] = (drv['last'] - drv['first']).dt.days + 1
+    actual_days = (
+        driver_df.assign(date=driver_df['OrderDate'].dt.date)
+        .groupby(['DriverId', 'date']).size()
+        .groupby('DriverId').size()
+        .rename('ימי עבודה בפועל')
+    )
+    drv = drv.join(actual_days, on='DriverId')
     drv['שיעור הצלחה %'] = (drv['נמסרו'] / drv['שובצו'] * 100).round(1)
-    drv['יעילות (משלוחים/יום)'] = (drv['נמסרו'] / drv['ימים פעילים']).round(3)
+    drv['יעילות (משלוחים/יום)'] = (drv['נמסרו'] / drv['ימי עבודה בפועל']).round(3)
+    Q1v   = drv['יעילות (משלוחים/יום)'].quantile(0.25)
+    Q3v   = drv['יעילות (משלוחים/יום)'].quantile(0.75)
+    fence = Q3v + 3 * (Q3v - Q1v)
     drv_sorted = drv.sort_values('נמסרו', ascending=False)
 
     col_l, col_r = st.columns(2)
@@ -443,7 +452,7 @@ with tab4:
 
     # ── יעילות מנורמלת ───────────────────────────────────────────
     with col_r:
-        legit   = drv[(drv['ימים פעילים'] >= 7) & (drv['נמסרו'] >= 10)]
+        legit   = drv[(drv['ימי עבודה בפועל'] >= 7) & (drv['נמסרו'] >= 10) & (drv['יעילות (משלוחים/יום)'] <= fence)]
         top_eff = legit.sort_values('יעילות (משלוחים/יום)', ascending=False).head(10)
         top_eff['label'] = top_eff['DriverId'].apply(lambda d: f'שליח {int(d)}')
         fig = go.Figure(go.Bar(
@@ -465,9 +474,6 @@ with tab4:
 
     # ── התפלגות יעילות ───────────────────────────────────────────
     st.markdown('---')
-    Q1v   = drv['יעילות (משלוחים/יום)'].quantile(0.25)
-    Q3v   = drv['יעילות (משלוחים/יום)'].quantile(0.75)
-    fence = Q3v + 3 * (Q3v - Q1v)
     n_out = (drv['יעילות (משלוחים/יום)'] > fence).sum()
 
     fig = px.histogram(
@@ -490,7 +496,7 @@ with tab4:
     st.markdown('#### חיפוש שליח')
     search = st.text_input('הכנס מזהה שליח (DriverId)', placeholder='לדוגמה: 538')
     show_df = drv_sorted[['DriverId','שובצו','נמסרו','שיעור הצלחה %',
-                           'ימים פעילים','יעילות (משלוחים/יום)']].copy()
+                           'ימי עבודה בפועל','יעילות (משלוחים/יום)']].copy()
     if search:
         try:
             show_df = show_df[show_df['DriverId'] == float(search)]

@@ -176,7 +176,13 @@ driver_stats = driver_df.groupby('DriverId').agg(
     first_order=('OrderDate','min'),
     last_order=('OrderDate','max'),
 ).reset_index()
-driver_stats['active_days']   = (driver_stats['last_order'] - driver_stats['first_order']).dt.days + 1
+actual_days = (
+    driver_df.assign(date=driver_df['OrderDate'].dt.date)
+    .groupby(['DriverId', 'date']).size()
+    .groupby('DriverId').size()
+    .rename('active_days')
+)
+driver_stats = driver_stats.join(actual_days, on='DriverId')
 driver_stats['delivery_rate'] = driver_stats['total_delivered'] / driver_stats['total_assigned'] * 100
 driver_stats_sorted           = driver_stats.sort_values('total_delivered', ascending=False)
 
@@ -218,7 +224,10 @@ print('saved: q4a_ranking.png')
 # Q4-B  |  גרף 5: TOP 10 שליחים לפי יעילות (ללא חריגים קיצוניים)
 # ════════════════════════════════════════════════════════════════
 driver_stats['efficiency'] = driver_stats['total_delivered'] / driver_stats['active_days']
-legit   = driver_stats[(driver_stats['active_days'] >= 7) & (driver_stats['total_delivered'] >= 10)]
+Q1_v  = driver_stats['efficiency'].quantile(0.25)
+Q3_v  = driver_stats['efficiency'].quantile(0.75)
+fence = Q3_v + 3 * (Q3_v - Q1_v)
+legit = driver_stats[(driver_stats['active_days'] >= 7) & (driver_stats['total_delivered'] >= 10) & (driver_stats['efficiency'] <= fence)]
 top_eff = legit.sort_values('efficiency', ascending=False).head(10)
 
 fig, ax = plt.subplots(figsize=(8, 4.5))
