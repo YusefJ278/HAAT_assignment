@@ -981,7 +981,15 @@ with tab8:
 
     # ── גרף 2: TOP חשודים ──────────────────────────────────────
     st.markdown('---')
-    st.markdown('#### TOP 10 לקוחות חשודים — מספר טוקנים גבוה מול מספר הזמנות נמוך')
+    st.markdown('#### TOP 10 לקוחות לפי מספר טוקנים — אנומליה לבדיקה')
+
+    st.warning(
+        '⚠ **מגבלת הניתוח:** טבלת payment_methods_user אינה כוללת תאריכים — '
+        'היא snapshot היסטורי של כל הכרטיסים שנרשמו אי פעם. '
+        'הדאטאסט מכסה 4 חודשים בלבד (פבר–מאי 2024). '
+        'לכן אי אפשר להסיק מסקנות חד-משמעיות על הונאה — '
+        'ייתכן שלמשתמשים האלה יש מאות הזמנות מחוץ לחלון הזמן.'
+    )
 
     top10 = tpu8.nlargest(10, 'token_count').copy()
     top10['orders'] = top10['UserId'].apply(lambda uid: (fdf['UserId']==uid).sum())
@@ -995,12 +1003,12 @@ with tab8:
             textposition='outside',
         ))
         fig3.add_trace(go.Bar(
-            name='הזמנות', x=top10['UserId'].astype(str), y=top10['orders'],
+            name='הזמנות (4 חודשים)', x=top10['UserId'].astype(str), y=top10['orders'],
             marker_color=C_ACCENT, text=top10['orders'],
             textposition='outside',
         ))
         fig3.update_layout(
-            title='TOP 10 לקוחות: טוקנים vs הזמנות',
+            title='TOP 10 לקוחות: טוקנים (כל הזמנים) vs הזמנות (פבר–מאי 2024 בלבד)',
             barmode='group', title_font_color=C_BLUE,
             plot_bgcolor='white', height=350,
             xaxis_title='UserId', yaxis_title='ספירה',
@@ -1009,10 +1017,10 @@ with tab8:
 
     with col_r2:
         top10_disp = top10[['UserId','token_count','orders']].copy()
-        top10_disp.columns = ['UserId','טוקנים','הזמנות']
-        top10_disp['יחס'] = (top10_disp['טוקנים'] / (top10_disp['הזמנות'].clip(lower=1))).round(0).astype(int)
+        top10_disp.columns = ['UserId','טוקנים','הזמנות (4 חו\')']
+        top10_disp['יחס'] = (top10_disp['טוקנים'] / (top10_disp['הזמנות (4 חו\')'].clip(lower=1))).round(0).astype(int)
         st.dataframe(top10_disp, use_container_width=True, hide_index=True)
-        st.error('⚠ UserId 11344: 161 טוקנים, 2 הזמנות בלבד — חשד ל-Card Testing!')
+        st.info('לאימות חשד — נדרש: היסטוריית הזמנות מלאה + timestamp רישום הטוקן + לוגי IP')
 
     # ── גרף 3: קרוס-רפרנס עם הזמנות ────────────────────────────
     st.markdown('---')
@@ -1058,22 +1066,34 @@ with tab8:
 
     # ── סיכום איכות נתונים ──────────────────────────────────────
     st.markdown('---')
+    st.markdown('#### סיכום ממצאי איכות נתונים')
     quality_data = {
         'בדיקה': [
-            'ערכים חסרים', 'תקינות פורמט Token',
-            'טוקנים כפולים', 'לקוחות עם 50+ טוקנים',
+            'ערכים חסרים',
+            'תקינות פורמט Token',
+            'טוקנים כפולים',
+            'לקוחות עם 50+ טוקנים (אנומליה)',
             'אשראי ללא טוקן',
+            'תאריך רישום טוקן',
         ],
         'תוצאה': [
             '✅ 0 חסרים',
             '✅ כל הטוקנים TOK_XXXXXXXX',
-            f'⚠ {n_dup_tok:,} כפולים',
-            f'⚠ {(tpu8["token_count"]>=50).sum()} לקוחות',
-            f'⚠ {len(credit_users - users_pm_set)} לקוחות',
+            f'⚠ {n_dup_tok:,} כפולים — באג ברישום',
+            f'⚠ {(tpu8["token_count"]>=50).sum()} לקוחות — דורש בדיקה',
+            f'⚠ {len(credit_users - users_pm_set)} לקוחות — ספק חיצוני?',
+            '❌ חסר — לא ניתן לנתח התנהגות לאורך זמן',
         ],
-        'דחיפות': ['נמוכה', 'נמוכה', 'גבוהה', 'גבוהה מאוד', 'בינונית'],
+        'דחיפות': ['נמוכה', 'נמוכה', 'גבוהה', 'בינונית — ראו הסתייגות', 'בינונית', 'גבוהה — מגבלת ניתוח'],
     }
     st.dataframe(pd.DataFrame(quality_data), use_container_width=True, hide_index=True)
+    st.info(
+        '💡 **צעד הבא קונקרטי:** להוסיף עמודת `CreatedAt` לטבלת payment_methods_user. '
+        'זה יאפשר לקבוע אם טוקנים רובים נרשמו בפרק זמן קצר (דגל הונאה אמיתי) '
+        'לעומת הצטברות לגיטימית לאורך שנים. '
+        'במקביל — לשלוף היסטוריית הזמנות מלאה (מחוץ לחלון 4 החודשים) '
+        'עבור 8 הלקוחות עם 50+ טוקנים.'
+    )
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 9 — פרזנטציה (Q9)
