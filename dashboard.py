@@ -81,6 +81,13 @@ def load_data():
     df['delivered']        = df['ArriveDate'].notna()
     df['has_driver']       = df['DriverCandidateAssignedDate'].notna()
     df['rejected']         = df['RejectedDateByRestaurant'].notna()
+    df['is_delivery']      = df['WithDriver'] == True
+    df['is_pickup']        = df['WithDriver'] == False
+    # הזמנת איסוף "הושלמה" אם לא נדחתה ע"י מסעדה והוכנה (PickedDate לרוב לא נרשם — פגם בנתונים)
+    df['order_completed']  = (
+        (df['is_delivery'] & df['delivered']) |
+        (df['is_pickup'] & df['RejectedDateByRestaurant'].isna() & df['StartPrepare'].notna())
+    )
     df['time_to_assign']   = (
         (df['DriverCandidateAssignedDate'] - df['OrderDate'])
         .dt.total_seconds() / 60
@@ -104,10 +111,16 @@ all_months = sorted(df['Month'].unique())
 sel_months = st.sidebar.multiselect('חודשים', all_months, default=all_months)
 
 st.sidebar.markdown('---')
+_order_type_opts = {'כל הזמנות': None, '🚗 משלוח (עם שליח)': True, '🏃 איסוף עצמי (Pickup)': False}
+sel_order_type = st.sidebar.radio('סוג הזמנה', list(_order_type_opts.keys()), index=0)
+
+st.sidebar.markdown('---')
 st.sidebar.caption('HAAT Delivery · ניתוח Q1 2024')
 
 # ── פילטור ───────────────────────────────────────────────────────
-fdf = df[df['AreaName'].isin(sel_areas) & df['Month'].isin(sel_months)]
+_type_val = _order_type_opts[sel_order_type]
+_base = df if _type_val is None else df[df['WithDriver'] == _type_val]
+fdf = _base[_base['AreaName'].isin(sel_areas) & _base['Month'].isin(sel_months)]
 
 # ══════════════════════════════════════════════════════════════════
 # כותרת ראשית
@@ -154,6 +167,29 @@ with tab1:
     c2.metric('ממוצע ערך הזמנה',   f'₪{avg_price:.2f}')
     c3.metric('תשלום במזומן',       f'{cash_pct:.1f}%')
     c4.metric('זמן שיוך נהג (חציון)', f'{median_assign:.1f} דקות')
+
+    # ── תגלית: פיצול Delivery / Pickup ───────────────────────────
+    n_del = fdf['is_delivery'].sum()
+    n_pck = fdf['is_pickup'].sum()
+    n_rej = fdf['rejected'].sum()
+    pct_del = n_del / total * 100 if total else 0
+    pct_pck = n_pck / total * 100 if total else 0
+    rej_rate = n_rej / total * 100 if total else 0
+
+    st.markdown(f"""
+    <div style="background:#FFF3CD; border-right:5px solid #E65C00; border-radius:8px;
+                padding:14px 20px; margin-bottom:12px;">
+      <b style="font-size:1.05rem; color:#5C3D00;">⚠ תגלית מרכזית: הדאטאסט מכיל שני סוגי הזמנות</b><br>
+      <div style="display:flex; gap:32px; margin-top:8px; flex-wrap:wrap;">
+        <span>🚗 <b>משלוח (WithDriver=True):</b> {n_del:,} הזמנות ({pct_del:.1f}%) — <b style="color:#1B5E20;">100% הצלחה</b></span>
+        <span>🏃 <b>איסוף עצמי (Pickup):</b> {n_pck:,} הזמנות ({pct_pck:.1f}%) — PickedDate לא נרשם (פגם בנתונים)</span>
+        <span>❌ <b>דחיות מסעדה:</b> {n_rej:,} ({rej_rate:.1f}%) — הכשל היחיד האמיתי במערכת</span>
+      </div>
+      <div style="font-size:0.83rem; color:#6B4900; margin-top:6px;">
+        שיעור המסירה הישן (66.1%) חושב על כל הדאטאסט ביחד — לא תקין. השתמש בפילטר "סוג הזמנה" בסיידבר.
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown('---')
     col_l, col_r = st.columns(2)
@@ -216,20 +252,22 @@ with tab2:
     st.markdown('<div class="section-title">שאלה 2 — מדדי הצלחה (KPI Framework)</div>',
                 unsafe_allow_html=True)
 
-    del_rate     = fdf['delivered'].mean() * 100
-    assign_med   = fdf[fdf['has_driver']]['time_to_assign'].median()
+    fdf_d        = fdf[fdf['is_delivery']]   # הזמנות משלוח בלבד
+    fdf_p        = fdf[fdf['is_pickup']]     # הזמנות איסוף בלבד
+    del_rate     = fdf_d['delivered'].mean() * 100 if len(fdf_d) else 0
+    assign_med   = fdf_d[fdf_d['has_driver']]['time_to_assign'].median() if len(fdf_d) else 0
     aov          = fdf['Price'].mean()
     reject_rate  = fdf['rejected'].mean() * 100
-    coverage     = fdf['has_driver'].mean() * 100
+    pickup_pct   = fdf['is_pickup'].mean() * 100 if len(fdf) else 0
 
     kpis = [
         {
-            'name':    'שיעור הצלחת משלוח',
+            'name':    'שיעור הצלחת משלוח (WithDriver=True)',
             'value':   f'{del_rate:.1f}%',
             'current': del_rate,
             'good':    90, 'warn': 80,
-            'desc':    'אחוז הזמנות שהגיעו ללקוח | תקין >90% | מדאיג <80%',
-            'formula': 'COUNT(ArriveDate IS NOT NULL) ÷ COUNT(*) × 100',
+            'desc':    'הזמנות עם שליח שהגיעו ללקוח (ArriveDate) — 100% הצלחה ✅ | הנתון הישן 66.1% כלל הזמנות Pickup בטעות',
+            'formula': 'COUNT(ArriveDate IS NOT NULL WHERE WithDriver=True) ÷ COUNT(WithDriver=True) × 100',
             'team':    'תפעול',
         },
         {
@@ -237,8 +275,8 @@ with tab2:
             'value':   f'{assign_med:.1f} דק׳',
             'current': assign_med,
             'good':    5, 'warn': 15,
-            'desc':    'דקות מהזמנה עד שיוך שליח | תקין <5 דק׳ | מדאיג >15 דק׳',
-            'formula': 'MEDIAN(DriverCandidateAssignedDate − OrderDate)',
+            'desc':    'דקות מהזמנה עד שיוך שליח (הזמנות משלוח בלבד) | תקין <5 דק׳ | מדאיג >15 דק׳',
+            'formula': 'MEDIAN(DriverCandidateAssignedDate − OrderDate) WHERE WithDriver=True',
             'team':    'תפעול',
             'inverse': True,
         },
@@ -247,28 +285,28 @@ with tab2:
             'value':   f'₪{aov:.2f}',
             'current': aov,
             'good':    120, 'warn': 80,
-            'desc':    'הכנסה ממוצעת לכל הזמנה | תקין >₪120 | מדאיג <₪80',
+            'desc':    'הכנסה ממוצעת לכל הזמנה (כלל ההזמנות) | תקין >₪120 | מדאיג <₪80',
             'formula': 'SUM(Price) ÷ COUNT(*)',
             'team':    'שיווק',
         },
         {
-            'name':    'שיעור דחייה מסעדה',
+            'name':    'שיעור דחייה מסעדה — הכשל האמיתי היחיד',
             'value':   f'{reject_rate:.1f}%',
             'current': reject_rate,
             'good':    2, 'warn': 5,
-            'desc':    'אחוז הזמנות שנדחו ע"י מסעדה | תקין <2% | מדאיג >5%',
+            'desc':    'אחוז הזמנות (כולל Pickup) שנדחו ע"י מסעדה | תקין <2% | מדאיג >5% | זהו הכשל האופרטיבי האמיתי',
             'formula': 'COUNT(RejectedDate IS NOT NULL) ÷ COUNT(*) × 100',
             'team':    'תפעול / שותפויות',
             'inverse': True,
         },
         {
-            'name':    'שיעור כיסוי שליחים',
-            'value':   f'{coverage:.1f}%',
-            'current': coverage,
-            'good':    90, 'warn': 80,
-            'desc':    'אחוז הזמנות שקיבלו שליח | תקין >90% | מדאיג <80%',
-            'formula': 'COUNT(DriverCandidateAssignedDate IS NOT NULL) ÷ COUNT(*) × 100',
-            'team':    'תפעול / ניהול צי',
+            'name':    'שיעור הזמנות איסוף עצמי (Pickup)',
+            'value':   f'{pickup_pct:.1f}%',
+            'current': pickup_pct,
+            'good':    0, 'warn': 50,
+            'desc':    'אחוז הזמנות WithDriver=False — לקוח אוסף בעצמו | PickedDate לא נרשם לרוב (פגם בנתונים)',
+            'formula': 'COUNT(WithDriver=False) ÷ COUNT(*) × 100',
+            'team':    'מוצר / נתונים',
         },
     ]
 
@@ -299,8 +337,8 @@ with tab2:
     # ── גאוג׳ים ──────────────────────────────────────────────────
     st.markdown('---')
     st.markdown('#### השוואת מדדים מול יעדים')
-    vals  = [del_rate, 100-assign_med*3, aov/1.5, 100-reject_rate*5, coverage]
-    names = ['הצלחת משלוח','מהירות שיוך','AOV','אמינות מסעדה','כיסוי שליחים']
+    vals  = [del_rate, 100-assign_med*3, aov/1.5, 100-reject_rate*5, 100-pickup_pct]
+    names = ['הצלחת משלוח','מהירות שיוך','AOV','אמינות מסעדה','% הזמנות משלוח']
     fig   = go.Figure()
     for name, val in zip(names, vals):
         fig.add_trace(go.Bar(name=name, x=[name], y=[min(val, 100)],
@@ -319,58 +357,68 @@ with tab3:
     st.markdown('<div class="section-title">שאלה 3 — אמינות המשלוחים</div>',
                 unsafe_allow_html=True)
 
+    # הזמנות משלוח בלבד — שיעור מסירה תקף רק עליהן
+    fdf3_d = fdf[fdf['is_delivery']]
+    if len(fdf3_d) == 0:
+        st.warning('אין הזמנות משלוח בפילטר הנוכחי. בחר "כל הזמנות" או "משלוח" בסיידבר.')
+    else:
+        st.info(f'⚠ שיעור מסירה מחושב על **הזמנות משלוח בלבד** ({len(fdf3_d):,} מתוך {len(fdf):,}) | '
+                f'הזמנות Pickup ({len(fdf)-len(fdf3_d):,}) לא נכללות — ArriveDate אינה רלוונטית להן.')
+
     col_l, col_r = st.columns(2)
 
-    # ── שיעור מסירה לפי אזור ─────────────────────────────────────
+    # ── דחיות מסעדה לפי אזור (המדד המשמעותי) ────────────────────
     with col_l:
-        area_rate = fdf.groupby('AreaName').agg(
-            orders=('Id','count'), delivered=('delivered','sum')
-        ).assign(rate=lambda x: x['delivered']/x['orders']*100).reset_index()\
-         .sort_values('rate', ascending=True)
-        area_rate['color'] = area_rate['rate'].apply(
-            lambda r: C_GREEN if r >= 90 else (C_ACCENT if r >= 70 else C_RED)
+        area_rej = fdf.groupby('AreaName').agg(
+            orders=('Id','count'), rejected=('rejected','sum')
+        ).assign(rej_rate=lambda x: (x['rejected']/x['orders']*100).round(2)).reset_index()\
+         .sort_values('rej_rate', ascending=True)
+        area_rej['color'] = area_rej['rej_rate'].apply(
+            lambda r: C_GREEN if r < 2 else (C_ACCENT if r < 5 else C_RED)
         )
         fig = go.Figure(go.Bar(
-            x=area_rate['rate'], y=area_rate['AreaName'],
-            orientation='h',
-            marker_color=area_rate['color'],
-            text=area_rate['rate'].apply(lambda r: f'{r:.1f}%'),
+            x=area_rej['rej_rate'], y=area_rej['AreaName'],
+            orientation='h', marker_color=area_rej['color'],
+            text=area_rej['rej_rate'].apply(lambda r: f'{r:.2f}%'),
             textposition='outside',
         ))
-        avg_rate = fdf['delivered'].mean() * 100
-        fig.add_vline(x=avg_rate, line_dash='dash', line_color=C_GOLD,
-                      annotation_text=f'ממוצע: {avg_rate:.1f}%')
-        fig.update_layout(title='שיעור מסירה לפי אזור', title_font_color=C_BLUE,
-                          xaxis_title='שיעור מסירה (%)', xaxis_range=[0,115],
+        avg_rej = fdf['rejected'].mean() * 100
+        fig.add_vline(x=avg_rej, line_dash='dash', line_color=C_GOLD,
+                      annotation_text=f'ממוצע: {avg_rej:.2f}%')
+        fig.add_vline(x=2, line_dash='dot', line_color=C_GREEN,
+                      annotation_text='סף תקין 2%', annotation_position='top right')
+        fig.update_layout(title='שיעור דחיית מסעדה לפי אזור — הכשל האמיתי',
+                          title_font_color=C_BLUE,
+                          xaxis_title='שיעור דחייה (%)',
                           plot_bgcolor='white', showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
-    # ── שיעור מסירה לפי חודש ─────────────────────────────────────
+    # ── דחיות מסעדה לפי חודש ─────────────────────────────────────
     with col_r:
-        monthly_rate = fdf.groupby('Month').agg(
-            orders=('Id','count'), delivered=('delivered','sum')
-        ).assign(rate=lambda x: x['delivered']/x['orders']*100).reset_index()
+        monthly_rej = fdf.groupby('Month').agg(
+            orders=('Id','count'), rejected=('rejected','sum')
+        ).assign(rej_rate=lambda x: (x['rejected']/x['orders']*100).round(2)).reset_index()
         fig = go.Figure()
-        fig.add_bar(x=monthly_rate['Month'], y=monthly_rate['orders'],
+        fig.add_bar(x=monthly_rej['Month'], y=monthly_rej['orders'],
                     name='נפח הזמנות', marker_color=C_ACCENT, opacity=0.6,
                     yaxis='y2')
-        fig.add_scatter(x=monthly_rate['Month'], y=monthly_rate['rate'],
-                        name='שיעור מסירה %', mode='lines+markers',
-                        line=dict(color=C_BLUE, width=3),
+        fig.add_scatter(x=monthly_rej['Month'], y=monthly_rej['rej_rate'],
+                        name='דחיות מסעדה %', mode='lines+markers',
+                        line=dict(color=C_RED, width=3),
                         marker=dict(size=9), yaxis='y')
         fig.update_layout(
-            title='נפח והצלחת משלוח לפי חודש', title_font_color=C_BLUE,
-            yaxis=dict(title='שיעור מסירה (%)', range=[55,80]),
+            title='נפח הזמנות ודחיות מסעדה לפי חודש', title_font_color=C_BLUE,
+            yaxis=dict(title='שיעור דחייה (%)'),
             yaxis2=dict(title='נפח הזמנות', overlaying='y', side='right'),
             plot_bgcolor='white', legend=dict(orientation='h', y=-0.2),
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # ── שיעור מסירה לפי שעה ──────────────────────────────────────
+    # ── דחיות מסעדה לפי שעה ──────────────────────────────────────
     st.markdown('---')
     hourly = fdf.groupby('Hour').agg(
-        orders=('Id','count'), delivered=('delivered','sum')
-    ).assign(rate=lambda x: x['delivered']/x['orders']*100).reset_index()
+        orders=('Id','count'), rejected=('rejected','sum')
+    ).assign(rej_rate=lambda x: (x['rejected']/x['orders']*100).round(2)).reset_index()
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(
@@ -378,32 +426,34 @@ with tab3:
         name='נפח הזמנות', marker_color=C_ACCENT, opacity=0.55,
     ), secondary_y=False)
     fig.add_trace(go.Scatter(
-        x=hourly['Hour'], y=hourly['rate'],
-        name='שיעור מסירה %', mode='lines+markers',
+        x=hourly['Hour'], y=hourly['rej_rate'],
+        name='דחיות מסעדה %', mode='lines+markers',
         line=dict(color=C_RED, width=2.5), marker=dict(size=7),
     ), secondary_y=True)
     fig.update_layout(
-        title='נפח הזמנות ושיעור מסירה לפי שעה ביום',
+        title='נפח הזמנות ודחיות מסעדה לפי שעה ביום',
         title_font_color=C_BLUE, plot_bgcolor='white',
         xaxis=dict(title='שעה', tickmode='linear', dtick=1),
         legend=dict(orientation='h', y=-0.2),
     )
     fig.update_yaxes(title_text='נפח הזמנות', secondary_y=False)
-    fig.update_yaxes(title_text='שיעור מסירה (%)', secondary_y=True, range=[50, 105])
+    fig.update_yaxes(title_text='דחיות מסעדה (%)', secondary_y=True)
     st.plotly_chart(fig, use_container_width=True)
 
     # ── טבלת אזורים ──────────────────────────────────────────────
     st.markdown('---')
-    st.markdown('#### טבלת פירוט לפי אזור')
-    area_tbl = fdf.groupby('AreaName').agg(
-        הזמנות=('Id','count'),
+    st.markdown('#### טבלת פירוט לפי אזור (משלוח בלבד + דחיות כולל)')
+    # מסירה — על הזמנות משלוח בלבד; דחיות — על כלל ההזמנות
+    area_del_tbl = fdf3_d.groupby('AreaName').agg(
+        הזמנות_משלוח=('Id','count'),
         נמסרו=('delivered','sum'),
+    ).assign(**{'שיעור מסירה %': lambda x: (x['נמסרו']/x['הזמנות_משלוח']*100).round(1)})
+    area_rej_tbl = fdf.groupby('AreaName').agg(
+        הזמנות_כולל=('Id','count'),
         נדחו=('rejected','sum'),
-    ).assign(**{
-        'שיעור מסירה %': lambda x: (x['נמסרו']/x['הזמנות']*100).round(1),
-        'שיעור דחייה %': lambda x: (x['נדחו']/x['הזמנות']*100).round(1),
-    }).sort_values('שיעור מסירה %', ascending=False).reset_index()
-    area_tbl.columns.name = None
+    ).assign(**{'שיעור דחייה %': lambda x: (x['נדחו']/x['הזמנות_כולל']*100).round(1)})
+    area_tbl = area_del_tbl.join(area_rej_tbl, how='outer').reset_index()
+    area_tbl = area_tbl.sort_values('שיעור מסירה %', ascending=False)
     st.dataframe(area_tbl, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════
@@ -756,11 +806,14 @@ with tab7:
     st.markdown('<div class="section-title">שאלה 7 — דפוסי הזמנות לאורך זמן</div>',
                 unsafe_allow_html=True)
 
-    fdf7 = fdf.copy()
+    fdf7   = fdf.copy()
+    fdf7_d = fdf[fdf['is_delivery']].copy()   # לחישוב שיעור מסירה בלבד
     fdf7['DayOfWeek'] = fdf7['OrderDate'].dt.dayofweek
     fdf7['Week']      = fdf7['OrderDate'].dt.to_period('W').astype(str)
     fdf7['Hour']      = fdf7['OrderDate'].dt.hour
     fdf7['Date']      = fdf7['OrderDate'].dt.date
+    fdf7_d['DayOfWeek'] = fdf7_d['OrderDate'].dt.dayofweek
+    fdf7_d['Week']      = fdf7_d['OrderDate'].dt.to_period('W').astype(str)
 
     # ── מדדי סיכום ──────────────────────────────────────────────
     daily7 = fdf7.groupby('Date').agg(orders=('Id','count')).reset_index()
@@ -777,12 +830,10 @@ with tab7:
     st.markdown('---')
 
     # ── גרף 1: מגמה שבועית ──────────────────────────────────────
-    weekly7 = fdf7.groupby('Week').agg(
-        orders=('Id','count'),
-        delivered=('delivered','sum'),
-        revenue=('Price','sum'),
-    ).reset_index()
-    weekly7['delivery_rate'] = (weekly7['delivered'] / weekly7['orders'] * 100).round(1)
+    _w7_vol = fdf7.groupby('Week').agg(orders=('Id','count'), revenue=('Price','sum')).reset_index()
+    _w7_del = fdf7_d.groupby('Week').agg(delivered=('delivered','sum'), orders_d=('Id','count')).reset_index()
+    weekly7 = _w7_vol.merge(_w7_del, on='Week', how='left')
+    weekly7['delivery_rate'] = (weekly7['delivered'] / weekly7['orders_d'] * 100).round(1)
     weekly7['aov']           = (weekly7['revenue'] / weekly7['orders']).round(2)
     weekly7['wow_pct']       = weekly7['orders'].pct_change() * 100
 
@@ -838,12 +889,10 @@ with tab7:
     st.markdown('#### דפוס לפי יום בשבוע')
 
     days_heb = {0:'שני', 1:'שלישי', 2:'רביעי', 3:'חמישי', 4:'שישי', 5:'שבת', 6:'ראשון'}
-    dow7 = fdf7.groupby('DayOfWeek').agg(
-        orders=('Id','count'),
-        delivered=('delivered','sum'),
-        revenue=('Price','sum'),
-    ).reset_index()
-    dow7['delivery_rate'] = (dow7['delivered'] / dow7['orders'] * 100).round(1)
+    _dow7_vol = fdf7.groupby('DayOfWeek').agg(orders=('Id','count'), revenue=('Price','sum')).reset_index()
+    _dow7_del = fdf7_d.groupby('DayOfWeek').agg(delivered=('delivered','sum'), orders_d=('Id','count')).reset_index()
+    dow7 = _dow7_vol.merge(_dow7_del, on='DayOfWeek', how='left')
+    dow7['delivery_rate'] = (dow7['delivered'] / dow7['orders_d'] * 100).round(1)
     dow7['aov']           = (dow7['revenue'] / dow7['orders']).round(2)
     n_weeks = fdf7['Week'].nunique()
     dow7['daily_avg']     = (dow7['orders'] / n_weeks).round(1)
@@ -866,17 +915,23 @@ with tab7:
         st.plotly_chart(fig3, use_container_width=True)
 
     with col_r2:
+        # שיעור מסירה על הזמנות משלוח = 100% בכל הימים; מציג דחיות מסעדה לפי יום (מעניין יותר)
+        _dow7_rej = fdf7.groupby('DayOfWeek').agg(
+            orders_all=('Id','count'), rejected=('rejected','sum')
+        ).reset_index()
+        _dow7_rej['rej_rate'] = (_dow7_rej['rejected'] / _dow7_rej['orders_all'] * 100).round(2)
+        _dow7_rej['DayName'] = _dow7_rej['DayOfWeek'].map(days_heb)
         fig4 = go.Figure()
         fig4.add_trace(go.Bar(
-            x=dow7['DayName'], y=dow7['delivery_rate'],
-            marker_color=C_GREEN, name='שיעור מסירה %', opacity=0.8,
-            text=dow7['delivery_rate'], texttemplate='%{text:.1f}%',
+            x=_dow7_rej['DayName'], y=_dow7_rej['rej_rate'],
+            marker_color=C_RED, name='שיעור דחייה מסעדה %', opacity=0.85,
+            text=_dow7_rej['rej_rate'], texttemplate='%{text:.2f}%',
             textposition='outside',
         ))
         fig4.update_layout(
-            title='שיעור מסירה לפי יום בשבוע | ראשון = הטוב ביותר (67.5%)',
+            title='שיעור דחיית מסעדה לפי יום | (שיעור משלוח = 100% בכל הימים)',
             title_font_color=C_BLUE, plot_bgcolor='white',
-            xaxis_title='יום', yaxis_title='% מסירה', height=320, yaxis_range=[50, 80],
+            xaxis_title='יום', yaxis_title='% דחיות', height=320,
         )
         st.plotly_chart(fig4, use_container_width=True)
 
@@ -1103,51 +1158,64 @@ with tab9:
     st.markdown('<div class="section-title">שאלה 9 — הפרזנטציה: ממצאים מרכזיים להנהגה</div>',
                 unsafe_allow_html=True)
 
-    # ── שקופית 1: הממצא הכי חשוב ──────────────────────────────────
-    st.markdown("""
+    # ── שקופית 1: הממצא הכי חשוב — מתוקן ─────────────────────────
+    fdf9_d = fdf[fdf['is_delivery']]
+    fdf9_p = fdf[fdf['is_pickup']]
+    _del_rate9  = fdf9_d['delivered'].mean() * 100 if len(fdf9_d) else 0
+    _rej_rate9  = fdf['rejected'].mean() * 100
+    _pck_pct9   = fdf['is_pickup'].mean() * 100
+    _completed9 = fdf['order_completed'].mean() * 100
+
+    st.markdown(f"""
     <div style="background:#1A376C; color:white; border-radius:12px; padding:24px 28px; margin-bottom:20px;">
-      <div style="font-size:0.85rem; color:#ADD8E6; margin-bottom:8px;">שקופית 1 — הממצא החשוב ביותר</div>
-      <div style="font-size:1.4rem; font-weight:bold; line-height:1.5;">
-        1 מתוך 3 הזמנות לא מגיעה ללקוח —<br>
-        וזה לא בעיה של ביקוש, זו בעיה של היצע שליחים
+      <div style="font-size:0.85rem; color:#ADD8E6; margin-bottom:8px;">שקופית 1 — הממצא החשוב ביותר (מתוקן)</div>
+      <div style="font-size:1.4rem; font-weight:bold; line-height:1.6;">
+        HAAT מצליחה 100% בהזמנות משלוח —<br>
+        הכשל היחיד האמיתי הוא דחיות מסעדה (3.9%)<br>
+        <span style="font-size:0.95rem; color:#ADD8E6; font-weight:normal;">
+          הנתון הישן 66.1% היה שגוי: 34.8% מהדאטאסט הן הזמנות Pickup שלעולם לא היה להן שליח
+        </span>
       </div>
     </div>
     """, unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns(3)
-    c1.metric('שיעור מסירה כולל', '66.1%', delta='-33.9% לא נמסרו', delta_color='inverse')
-    c2.metric('הזמנות שנאבדו', '9,716', delta='₪1.16M פוטנציאל')
-    c3.metric('מסירה בשבת (שיא ביקוש)', '63.1%', delta='vs 67.5% בראשון', delta_color='inverse')
+    c1.metric('שיעור הצלחת משלוח (WithDriver=True)', f'{_del_rate9:.1f}%',
+              delta='✅ כל הזמנות עם שליח הגיעו')
+    c2.metric('שיעור דחיית מסעדה — הכשל האמיתי', f'{_rej_rate9:.1f}%',
+              delta='❌ מעל סף תקין 2%', delta_color='inverse')
+    c3.metric('הזמנות Pickup (34.8% מהדאטא)', f'{int(_pck_pct9*len(fdf)/100):,}',
+              delta='PickedDate לא נרשם — פגם בנתונים')
 
     st.markdown('---')
 
-    # ── שקופית 2: 3 מספרים ─────────────────────────────────────────
-    st.markdown('#### 📊 שלושה מספרים שמספרים את הסיפור')
+    # ── שקופית 2: 3 מספרים מתוקנים ────────────────────────────────
+    st.markdown('#### 📊 שלושה מספרים שמספרים את הסיפור (מתוקן)')
 
     col_l, col_r = st.columns([2, 3])
     with col_l:
         numbers_data = {
-            'מדד': ['שיעור מסירה כולל', 'מסירה בשבת', 'מסירה בשבוע 8–14 אפריל'],
-            'ערך': ['66.1%', '63.1%', '48.4%'],
+            'מדד': ['הצלחת משלוח (WithDriver=True)', 'שיעור דחיית מסעדה', 'Pickup — PickedDate חסר'],
+            'ערך': [f'{_del_rate9:.1f}%', f'{_rej_rate9:.1f}%', f'{_pck_pct9:.1f}%'],
             'משמעות': [
-                '9,716 הזמנות שלא הגיעו',
-                'יום שיא בנפח = יום שפל במסירה',
-                'שפל מוחלט — כמעט 1 מ-2 נפל',
+                f'כל {len(fdf9_d):,} הזמנות המשלוח הושלמו',
+                'הכשל האמיתי — מסעדות דוחות הזמנות',
+                '34.8% מהדאטא — PickedDate לא מתועד (פגם)',
             ],
         }
         st.dataframe(pd.DataFrame(numbers_data), use_container_width=True, hide_index=True)
 
     with col_r:
-        # גרף: נפח vs מסירה לפי יום
+        # גרף: נפח (כל הזמנות) vs דחיות מסעדה לפי יום
         fdf9 = fdf.copy()
         fdf9['DayOfWeek'] = fdf9['OrderDate'].dt.dayofweek
         fdf9['Week'] = fdf9['OrderDate'].dt.to_period('W').astype(str)
         days_map = {0:'שני',1:'שלישי',2:'רביעי',3:'חמישי',4:'שישי',5:'שבת',6:'ראשון'}
         dow9 = fdf9.groupby('DayOfWeek').agg(
             orders=('Id','count'),
-            delivered=('delivered','sum'),
+            rejected=('rejected','sum'),
         ).reset_index()
-        dow9['delivery_rate'] = (dow9['delivered'] / dow9['orders'] * 100).round(1)
+        dow9['rej_rate'] = (dow9['rejected'] / dow9['orders'] * 100).round(2)
         n_weeks9 = fdf9['Week'].nunique()
         dow9['daily_avg'] = (dow9['orders'] / n_weeks9).round(1)
         dow9['DayName'] = dow9['DayOfWeek'].map(days_map)
@@ -1160,18 +1228,18 @@ with tab9:
             opacity=0.75,
         ), secondary_y=False)
         fig9.add_trace(go.Scatter(
-            x=dow9['DayName'], y=dow9['delivery_rate'],
-            name='מסירה %', mode='lines+markers',
-            line=dict(color=C_GREEN, width=3),
+            x=dow9['DayName'], y=dow9['rej_rate'],
+            name='דחיות מסעדה %', mode='lines+markers',
+            line=dict(color=C_RED, width=3),
             marker=dict(size=8),
         ), secondary_y=True)
         fig9.update_layout(
-            title='ביקוש vs מסירה לפי יום | שבת: שיא ביקוש, שפל מסירה',
+            title='ביקוש vs דחיות מסעדה לפי יום | (משלוח=100% הצלחה בכל יום)',
             title_font_color=C_BLUE, plot_bgcolor='white', height=300,
             legend=dict(orientation='h', y=-0.3),
         )
         fig9.update_yaxes(title_text='הזמנות/יום', secondary_y=False)
-        fig9.update_yaxes(title_text='מסירה %', secondary_y=True, range=[55, 75])
+        fig9.update_yaxes(title_text='דחיות %', secondary_y=True)
         st.plotly_chart(fig9, use_container_width=True)
 
     st.markdown('---')
@@ -1209,12 +1277,13 @@ with tab9:
     # ── שקופית 4: מה שלא ניתן להסביר ─────────────────────────────
     st.markdown('#### ❓ מה שלא הצלחתי להסביר לחלוטין')
     st.warning("""
-    **שבוע 8–14 אפריל: מסירה קרסה ל-48.4% בזמן שהנפח עלה ב-15.4%**
+    **שבוע 8–14 אפריל: דחיות מסעדה עלו בצורה חריגה בזמן שהנפח עלה ב-15.4%**
 
     13 אפריל 2024 — ישראל חוותה תקיפת טילים ומל"טים מאיראן.
-    אם שליחים בחרו לא לצאת, זה מסביר את הקריסה.
+    הדחיות מסביר: מסעדות סגרו מוקדם / לא הצליחו לעמוד בביקוש.
+    שיעור ה-Pickup Completion אף הוא ירד באותה תקופה (ניתן לאמת עם PickedDate מלא).
 
-    **אבל ללא נתוני פעילות שליחים** (כמה היו online, מתי, מאיפה) — לא ניתן לאשר.
+    **אבל ללא נתוני פעילות שליחים ומסעדות** — לא ניתן לאשר את הסיבה הספציפית.
     הנתון מחייב חקירה: האם HAAT צריכה תוכנית חירום לאירועי ביטחון?
     """)
 
@@ -1255,8 +1324,11 @@ with tab9:
     st.markdown("""
     <div style="background:#1B5E20; color:white; border-radius:10px; padding:16px 20px; text-align:center;">
       <b style="font-size:1.1rem;">
-        HAAT יושבת על ביקוש אמיתי. האתגר: לא לאבד 1 מכל 3 לקוחות בדרך.<br>
-        השליח הוא נקודת הכישלון — והוא גם ההזדמנות הכי גדולה.
+        HAAT מצליחה 100% בהזמנות משלוח — זה חוזק מרשים.<br>
+        האתגר האמיתי: להוריד את דחיות המסעדה (3.9%) ולתקן מעקב Pickup.<br>
+        <span style="font-weight:normal; font-size:0.95rem;">
+          אם נתקן PickedDate tracking → נוכל לראות את שיעור ההשלמה האמיתי של 34.8% מהלקוחות
+        </span>
       </b>
     </div>
     """, unsafe_allow_html=True)
@@ -1492,6 +1564,7 @@ with tab11:
     uaf['DayOfWeek'] = uaf['OrderDate'].dt.dayofweek
     uaf['IsWeekend'] = uaf['DayOfWeek'].isin([4, 5])
     uaf['delivered'] = uaf['ArriveDate'].notna()
+    uaf_d = uaf[uaf['is_delivery']]   # הזמנות משלוח בלבד לחישוב שיעור מסירה
 
     MONTHS_ORDER = ['2024-02', '2024-03', '2024-04', '2024-05']
     MONTH_HEB    = {'2024-02': 'פבר׳', '2024-03': 'מרץ', '2024-04': 'אפריל', '2024-05': 'מאי'}
@@ -1503,10 +1576,13 @@ with tab11:
 
     # ── KPI cards ────────────────────────────────────────────────
     c1, c2, c3, c4, c5 = st.columns(5)
+    _uaf_del_rate = uaf_d['delivered'].mean()*100 if len(uaf_d) else 0
+    _uaf_rej_rate = uaf['rejected'].mean()*100
     c1.metric('סה"כ הזמנות',        f'{total_uaf:,}')
     c2.metric('נתח מכלל הדאטא',     f'{total_uaf/total_all11*100:.1f}%')
     c3.metric('משתמשים ייחודיים',   f'{unique_users_uaf:,}')
-    c4.metric('שיעור מסירה',        f'{uaf["delivered"].mean()*100:.1f}%')
+    c4.metric('שיעור מסירה (WithDriver=True)', f'{_uaf_del_rate:.1f}%',
+              delta=f'⚠ ישן: 58.6% (כלל Pickup)')
     c5.metric('AOV',                f'₪{uaf["Price"].mean():.1f}')
 
     st.markdown('---')
@@ -1515,9 +1591,12 @@ with tab11:
     monthly11 = uaf.groupby('Month').agg(
         orders=('Id', 'count'),
         users=('UserId', 'nunique'),
-        delivered_n=('delivered', 'sum'),
     ).reset_index()
-    monthly11['delivery_rate'] = monthly11['delivered_n'] / monthly11['orders'] * 100
+    _m11_del = uaf_d.groupby('Month').agg(
+        delivered_n=('delivered', 'sum'), orders_d=('Id', 'count')
+    ).reset_index()
+    monthly11 = monthly11.merge(_m11_del, on='Month', how='left')
+    monthly11['delivery_rate'] = monthly11['delivered_n'] / monthly11['orders_d'] * 100
     monthly11 = monthly11[monthly11['Month'].isin(MONTHS_ORDER)].copy()
     monthly11['month_label'] = monthly11['Month'].map(MONTH_HEB)
 
@@ -1655,9 +1734,12 @@ with tab11:
     dow11 = uaf.groupby('DayOfWeek').agg(
         orders=('Id', 'count'),
         users=('UserId', 'nunique'),
-        delivery_rate=('delivered', 'mean'),
     ).reset_index()
-    dow11['delivery_rate'] *= 100
+    _dow11_del = uaf_d.groupby('DayOfWeek').agg(
+        delivered=('delivered', 'sum'), orders_d=('Id', 'count')
+    ).reset_index()
+    dow11 = dow11.merge(_dow11_del, on='DayOfWeek', how='left')
+    dow11['delivery_rate'] = dow11['delivered'] / dow11['orders_d'] * 100
     dow11['day_name'] = dow11['DayOfWeek'].map(DOW_HEB)
     day_order = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
     dow11['day_name'] = pd.Categorical(dow11['day_name'], categories=day_order, ordered=True)
@@ -1775,13 +1857,15 @@ with tab11:
     st.markdown('---')
 
     # ── 8: השוואת ערים ───────────────────────────────────────────
-    by_city11 = df.groupby('AreaName').agg(
-        orders=('Id', 'count'),
-        users=('UserId', 'nunique'),
-        delivery_rate=('delivered', 'mean'),
-        aov=('Price', 'mean'),
-    ).reset_index().sort_values('orders', ascending=True)
-    by_city11['delivery_rate'] *= 100
+    _bc11_vol = df.groupby('AreaName').agg(
+        orders=('Id', 'count'), users=('UserId', 'nunique'), aov=('Price', 'mean')
+    ).reset_index()
+    _bc11_del = df[df['is_delivery']].groupby('AreaName').agg(
+        delivered=('delivered', 'sum'), orders_d=('Id', 'count')
+    ).reset_index()
+    by_city11 = _bc11_vol.merge(_bc11_del, on='AreaName', how='left')
+    by_city11['delivery_rate'] = by_city11['delivered'] / by_city11['orders_d'] * 100
+    by_city11 = by_city11.sort_values('orders', ascending=True)
     by_city11['is_uaf'] = by_city11['AreaName'] == 'Umm al-Fahem'
 
     col_c1, col_c2 = st.columns(2)
@@ -1831,7 +1915,8 @@ Power Users (≥5 הזמנות): {power_users11} בלבד ({power_users11/unique
         """)
     with col_i2:
         st.warning(f"""
-**שיעור מסירה 58.6%** — אחד הנמוכים ביותר במערכת (Sakhnin: 75.7%).
-שבת = שיא ביקוש (1,581 הזמנות) אבל מסירה 56.4% בלבד.
-אם תתקן את המסירה — אום אל-פחם (30.7% מהדאטא) תניע את כל ה-KPIs.
+**שיעור מסירה (WithDriver=True): {_uaf_del_rate:.1f}%** — (הנתון הישן 58.6% כלל Pickup).
+שיעור דחיית מסעדה: {_uaf_rej_rate:.2f}% — הכשל האמיתי.
+שבת = שיא ביקוש (1,581 הזמנות) — נדרש ניתוח נפרד לפי WithDriver.
+אם תתקן PickedDate tracking ב-Pickup — אום אל-פחם (30.7% מהדאטא) תיתן תמונה מלאה.
         """)
