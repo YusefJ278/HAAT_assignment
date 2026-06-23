@@ -122,7 +122,7 @@ st.markdown(f"""
 # ══════════════════════════════════════════════════════════════════
 # טאבים
 # ══════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     '📊 מבט כללי (Q1)',
     '🎯 מדדי KPI (Q2)',
     '🚚 אמינות משלוחים (Q3)',
@@ -133,6 +133,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     '🔍 איכות נתונים (Q8)',
     '🎤 פרזנטציה (Q9)',
     '🎁 בונוס: בונוסים לשליחים (Q10)',
+    '🏙️ מיקוד: אום אל-פחם',
 ])
 
 # ══════════════════════════════════════════════════════════════════
@@ -1476,3 +1477,361 @@ def calc_weekly_bonus(orders_df, week_start, week_end):
 
     st.error('⚠ אף נהג לא הגיע לסף הבונוס בשבוע בודד. הספים גבוהים פי 3–15 מהמקסימום בפועל.')
     st.info('💡 המלצה: לכייל את הספים ל-10–15 מסירות לאזורי 1/10, ו-15 מסירות לאזור 4 — תכנית הבונוסים תהפוך אפקטיבית.')
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 11 — מיקוד: אום אל-פחם
+# ══════════════════════════════════════════════════════════════════
+with tab11:
+    st.markdown('<div class="section-title">ניתוח מורחב — Umm al-Fahem (אום אל-פחם) · פבר׳–מאי 2024</div>',
+                unsafe_allow_html=True)
+
+    # ── נתוני הבסיס ──────────────────────────────────────────────
+    uaf = df[df['AreaName'] == 'Umm al-Fahem'].copy()
+    uaf['Month']     = uaf['OrderDate'].dt.to_period('M').astype(str)
+    uaf['Week']      = uaf['OrderDate'].dt.to_period('W').astype(str)
+    uaf['DayOfWeek'] = uaf['OrderDate'].dt.dayofweek
+    uaf['IsWeekend'] = uaf['DayOfWeek'].isin([4, 5])
+    uaf['delivered'] = uaf['ArriveDate'].notna()
+
+    MONTHS_ORDER = ['2024-02', '2024-03', '2024-04', '2024-05']
+    MONTH_HEB    = {'2024-02': 'פבר׳', '2024-03': 'מרץ', '2024-04': 'אפריל', '2024-05': 'מאי'}
+    DOW_HEB      = {0: 'שני', 1: 'שלישי', 2: 'רביעי', 3: 'חמישי', 4: 'שישי', 5: 'שבת', 6: 'ראשון'}
+
+    total_uaf   = len(uaf)
+    total_all11 = len(df)
+    unique_users_uaf = uaf['UserId'].nunique()
+
+    # ── KPI cards ────────────────────────────────────────────────
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric('סה"כ הזמנות',        f'{total_uaf:,}')
+    c2.metric('נתח מכלל הדאטא',     f'{total_uaf/total_all11*100:.1f}%')
+    c3.metric('משתמשים ייחודיים',   f'{unique_users_uaf:,}')
+    c4.metric('שיעור מסירה',        f'{uaf["delivered"].mean()*100:.1f}%')
+    c5.metric('AOV',                f'₪{uaf["Price"].mean():.1f}')
+
+    st.markdown('---')
+
+    # ── 1: הזמנות ומשתמשים לפי חודש ─────────────────────────────
+    monthly11 = uaf.groupby('Month').agg(
+        orders=('Id', 'count'),
+        users=('UserId', 'nunique'),
+        delivered_n=('delivered', 'sum'),
+    ).reset_index()
+    monthly11['delivery_rate'] = monthly11['delivered_n'] / monthly11['orders'] * 100
+    monthly11 = monthly11[monthly11['Month'].isin(MONTHS_ORDER)].copy()
+    monthly11['month_label'] = monthly11['Month'].map(MONTH_HEB)
+
+    col_l, col_r = st.columns(2)
+
+    with col_l:
+        fig = make_subplots(specs=[[{'secondary_y': True}]])
+        fig.add_trace(go.Bar(
+            x=monthly11['month_label'], y=monthly11['orders'],
+            name='הזמנות', marker_color=C_ACCENT, opacity=0.85,
+            text=monthly11['orders'], textposition='outside',
+        ), secondary_y=False)
+        fig.add_trace(go.Bar(
+            x=monthly11['month_label'], y=monthly11['users'],
+            name='משתמשים', marker_color=C_GREEN, opacity=0.7,
+            text=monthly11['users'], textposition='outside',
+        ), secondary_y=False)
+        fig.add_trace(go.Scatter(
+            x=monthly11['month_label'], y=monthly11['delivery_rate'],
+            name='מסירה%', mode='lines+markers',
+            line=dict(color=C_RED, width=3), marker=dict(size=9),
+        ), secondary_y=True)
+        fig.update_layout(
+            title='הזמנות, משתמשים ושיעור מסירה לפי חודש',
+            title_font_color=C_BLUE, plot_bgcolor='white', barmode='group',
+            legend=dict(orientation='h', y=-0.25), height=380,
+        )
+        fig.update_yaxes(title_text='כמות', secondary_y=False)
+        fig.update_yaxes(title_text='מסירה%', secondary_y=True, range=[50, 75])
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ── 2: חדשים vs. חוזרים ─────────────────────────────────────
+    with col_r:
+        seen11 = set()
+        new_list11, ret_list11, mlabels11 = [], [], []
+        for m in MONTHS_ORDER:
+            mu  = set(uaf[uaf['Month'] == m]['UserId'])
+            new_u = mu - seen11
+            ret_u = mu & seen11
+            seen11 |= mu
+            new_list11.append(len(new_u))
+            ret_list11.append(len(ret_u))
+            mlabels11.append(MONTH_HEB[m])
+
+        fig2 = go.Figure()
+        fig2.add_trace(go.Bar(
+            x=mlabels11, y=new_list11,
+            name='חדשים', marker_color=C_ACCENT,
+            text=new_list11, textposition='inside',
+        ))
+        fig2.add_trace(go.Bar(
+            x=mlabels11, y=ret_list11,
+            name='חוזרים', marker_color=C_GREEN,
+            text=ret_list11, textposition='inside',
+        ))
+        ret_pcts = [f'{r/(n+r)*100:.1f}%' if (n+r) > 0 else '0%'
+                    for n, r in zip(new_list11, ret_list11)]
+        for i, (label, pct) in enumerate(zip(mlabels11, ret_pcts)):
+            fig2.add_annotation(
+                x=label, y=new_list11[i]+ret_list11[i]+40,
+                text=f'{pct} חוזרים', showarrow=False,
+                font=dict(color=C_GREEN, size=11),
+            )
+        fig2.update_layout(
+            title='משתמשים חדשים vs. חוזרים לפי חודש',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            barmode='stack', legend=dict(orientation='h', y=-0.25),
+            height=380, yaxis_range=[0, 2700],
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+    st.markdown('---')
+
+    # ── 3: Retention חודשי ───────────────────────────────────────
+    col_l2, col_r2 = st.columns(2)
+
+    with col_l2:
+        periods11 = MONTHS_ORDER
+        ret_rates11, ret_pair_labels11 = [], []
+        for i in range(len(periods11) - 1):
+            u1 = set(uaf[uaf['Month'] == periods11[i]  ]['UserId'])
+            u2 = set(uaf[uaf['Month'] == periods11[i+1]]['UserId'])
+            r  = len(u1 & u2) / len(u1) * 100 if u1 else 0
+            ret_rates11.append(round(r, 1))
+            ret_pair_labels11.append(f"{MONTH_HEB[periods11[i]]} ← {MONTH_HEB[periods11[i+1]]}")
+
+        avg_ret11 = sum(ret_rates11) / len(ret_rates11)
+        fig3 = go.Figure()
+        fig3.add_trace(go.Bar(
+            x=ret_pair_labels11, y=ret_rates11,
+            marker_color=[C_ACCENT, C_ACCENT, C_GREEN],
+            text=[f'{v:.1f}%' for v in ret_rates11],
+            textposition='outside', width=0.45,
+        ))
+        fig3.add_hline(y=avg_ret11, line_dash='dash', line_color=C_GOLD,
+                       annotation_text=f'ממוצע {avg_ret11:.1f}%',
+                       annotation_position='bottom right')
+        fig3.update_layout(
+            title='Retention חודשי — % שחזרו לחודש הבא (טרנד עולה ✓)',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            yaxis_title='Retention %', yaxis_range=[0, 22],
+            showlegend=False, height=340,
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+
+    # ── 4: תדירות הזמנה למשתמש ──────────────────────────────────
+    with col_r2:
+        user_freq11 = uaf.groupby('UserId')['Id'].count()
+        freq_labels11 = ['1 הזמנה', '2 הזמנות', '3–4', '5–9', '10+']
+        freq_counts11 = [
+            (user_freq11 == 1).sum(),
+            (user_freq11 == 2).sum(),
+            ((user_freq11 >= 3) & (user_freq11 <= 4)).sum(),
+            ((user_freq11 >= 5) & (user_freq11 <= 9)).sum(),
+            (user_freq11 >= 10).sum(),
+        ]
+        total_u11 = sum(freq_counts11)
+        fig4 = go.Figure(go.Bar(
+            x=freq_labels11, y=freq_counts11,
+            marker_color=[C_RED, C_ACCENT, C_GOLD, C_GREEN, C_BLUE],
+            text=[f'{v:,}<br>({v/total_u11*100:.1f}%)' for v in freq_counts11],
+            textposition='outside',
+        ))
+        fig4.update_layout(
+            title=f'התפלגות תדירות הזמנה למשתמש | סה"כ {total_u11:,} משתמשים',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            yaxis_title='מספר משתמשים', showlegend=False,
+            yaxis_range=[0, max(freq_counts11) * 1.25], height=340,
+        )
+        st.plotly_chart(fig4, use_container_width=True)
+
+    st.markdown('---')
+
+    # ── 5: פיזור יומי ────────────────────────────────────────────
+    dow11 = uaf.groupby('DayOfWeek').agg(
+        orders=('Id', 'count'),
+        users=('UserId', 'nunique'),
+        delivery_rate=('delivered', 'mean'),
+    ).reset_index()
+    dow11['delivery_rate'] *= 100
+    dow11['day_name'] = dow11['DayOfWeek'].map(DOW_HEB)
+    day_order = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
+    dow11['day_name'] = pd.Categorical(dow11['day_name'], categories=day_order, ordered=True)
+    dow11 = dow11.sort_values('day_name')
+
+    col_l3, col_r3 = st.columns(2)
+
+    with col_l3:
+        day_colors = [C_ACCENT if d not in [4, 5] else C_RED for d in dow11['DayOfWeek']]
+        fig5 = make_subplots(specs=[[{'secondary_y': True}]])
+        fig5.add_trace(go.Bar(
+            x=dow11['day_name'], y=dow11['orders'],
+            name='הזמנות', marker_color=day_colors, opacity=0.85,
+            text=dow11['orders'], textposition='outside',
+        ), secondary_y=False)
+        fig5.add_trace(go.Scatter(
+            x=dow11['day_name'], y=dow11['delivery_rate'],
+            name='מסירה%', mode='lines+markers',
+            line=dict(color=C_GREEN, width=2.5), marker=dict(size=8),
+        ), secondary_y=True)
+        fig5.update_layout(
+            title='הזמנות ומסירה לפי יום בשבוע | אדום = סוף שבוע',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            legend=dict(orientation='h', y=-0.25), height=360,
+        )
+        fig5.update_yaxes(title_text='הזמנות', secondary_y=False)
+        fig5.update_yaxes(title_text='מסירה%', secondary_y=True, range=[50, 70])
+        st.plotly_chart(fig5, use_container_width=True)
+
+    # ── 6: אירוע אפריל 8–14 ─────────────────────────────────────
+    with col_r3:
+        ev_windows = {
+            'לפני (1–7 אפריל)':    uaf[(uaf['OrderDate'] >= '2024-04-01') & (uaf['OrderDate'] <= '2024-04-07')],
+            'האירוע (8–14 אפריל)': uaf[(uaf['OrderDate'] >= '2024-04-08') & (uaf['OrderDate'] <= '2024-04-14')],
+            'אחרי (15–21 אפריל)':  uaf[(uaf['OrderDate'] >= '2024-04-15') & (uaf['OrderDate'] <= '2024-04-21')],
+        }
+        ev_labels11  = list(ev_windows.keys())
+        ev_orders11  = [len(v) for v in ev_windows.values()]
+        ev_deliv11   = [v['delivered'].mean() * 100 for v in ev_windows.values()]
+        ev_colors11  = [C_ACCENT, C_RED, C_GREEN]
+
+        fig6 = make_subplots(specs=[[{'secondary_y': True}]])
+        fig6.add_trace(go.Bar(
+            x=ev_labels11, y=ev_orders11,
+            name='הזמנות', marker_color=ev_colors11,
+            text=ev_orders11, textposition='outside',
+        ), secondary_y=False)
+        fig6.add_trace(go.Scatter(
+            x=ev_labels11, y=ev_deliv11,
+            name='מסירה%', mode='lines+markers',
+            line=dict(color=C_GOLD, width=3), marker=dict(size=10),
+        ), secondary_y=True)
+        for xi, yi in zip(ev_labels11, ev_deliv11):
+            fig6.add_annotation(x=xi, y=yi, text=f'{yi:.1f}%',
+                                yshift=18, showarrow=False,
+                                font=dict(color=C_GOLD, size=12))
+        fig6.update_layout(
+            title='אירוע 8–14 אפריל | מסירה קרסה ל-35.9%',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            legend=dict(orientation='h', y=-0.25),
+            height=360, yaxis_range=[300, 560],
+        )
+        fig6.update_yaxes(title_text='הזמנות', secondary_y=False)
+        fig6.update_yaxes(title_text='מסירה%', secondary_y=True, range=[0, 80])
+        st.plotly_chart(fig6, use_container_width=True)
+
+    st.markdown('---')
+
+    # ── 7: טרנד שבועי ────────────────────────────────────────────
+    weekly11 = uaf.groupby('Week').agg(
+        orders=('Id', 'count'),
+        users=('UserId', 'nunique'),
+        delivery_rate=('delivered', 'mean'),
+    ).reset_index().sort_values('Week')
+    weekly11 = weekly11[weekly11['Week'] >= '2024-02'].copy()
+    weekly11['delivery_rate'] *= 100
+
+    fig7 = make_subplots(specs=[[{'secondary_y': True}]])
+    fig7.add_trace(go.Scatter(
+        x=weekly11['Week'], y=weekly11['orders'],
+        name='הזמנות', mode='lines+markers',
+        line=dict(color=C_ACCENT, width=2.5), marker=dict(size=6),
+        fill='tozeroy', fillcolor='rgba(38,116,193,0.12)',
+    ), secondary_y=False)
+    fig7.add_trace(go.Scatter(
+        x=weekly11['Week'], y=weekly11['users'],
+        name='משתמשים', mode='lines+markers',
+        line=dict(color=C_GREEN, width=2, dash='dot'), marker=dict(size=5),
+    ), secondary_y=False)
+    fig7.add_trace(go.Scatter(
+        x=weekly11['Week'], y=weekly11['delivery_rate'],
+        name='מסירה%', mode='lines+markers',
+        line=dict(color=C_GOLD, width=2), marker=dict(size=5),
+    ), secondary_y=True)
+
+    event_week11 = weekly11[weekly11['Week'].str.startswith('2024-04-08')]
+    if len(event_week11):
+        fig7.add_vline(
+            x=event_week11['Week'].values[0],
+            line_dash='dash', line_color=C_RED, line_width=1.5,
+            annotation_text='8–14 אפריל', annotation_position='top right',
+            annotation_font_color=C_RED,
+        )
+
+    fig7.update_layout(
+        title='טרנד שבועי — הזמנות, משתמשים ושיעור מסירה',
+        title_font_color=C_BLUE, plot_bgcolor='white', height=380,
+        legend=dict(orientation='h', y=-0.2),
+        xaxis=dict(tickangle=35),
+    )
+    fig7.update_yaxes(title_text='הזמנות / משתמשים', secondary_y=False)
+    fig7.update_yaxes(title_text='מסירה%', secondary_y=True, range=[30, 80])
+    st.plotly_chart(fig7, use_container_width=True)
+
+    st.markdown('---')
+
+    # ── 8: השוואת ערים ───────────────────────────────────────────
+    by_city11 = df.groupby('AreaName').agg(
+        orders=('Id', 'count'),
+        users=('UserId', 'nunique'),
+        delivery_rate=('delivered', 'mean'),
+        aov=('Price', 'mean'),
+    ).reset_index().sort_values('orders', ascending=True)
+    by_city11['delivery_rate'] *= 100
+    by_city11['is_uaf'] = by_city11['AreaName'] == 'Umm al-Fahem'
+
+    col_c1, col_c2 = st.columns(2)
+
+    with col_c1:
+        ord_colors = [C_RED if u else C_ACCENT for u in by_city11['is_uaf']]
+        fig8 = go.Figure(go.Bar(
+            x=by_city11['orders'], y=by_city11['AreaName'],
+            orientation='h', marker_color=ord_colors,
+            text=by_city11['orders'], textposition='outside',
+        ))
+        fig8.update_layout(
+            title='הזמנות לפי עיר | אום אל-פחם = פי 2 מהשנייה',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            xaxis_title='הזמנות', xaxis_range=[0, 11000], height=380,
+        )
+        st.plotly_chart(fig8, use_container_width=True)
+
+    with col_c2:
+        del_colors11 = [C_RED if u else C_GREEN for u in by_city11['is_uaf']]
+        avg_del11    = df['delivered'].mean() * 100
+        fig9 = go.Figure(go.Bar(
+            x=by_city11['delivery_rate'], y=by_city11['AreaName'],
+            orientation='h', marker_color=del_colors11,
+            text=by_city11['delivery_rate'].apply(lambda v: f'{v:.1f}%'),
+            textposition='outside',
+        ))
+        fig9.add_vline(x=avg_del11, line_dash='dash', line_color=C_GOLD,
+                       annotation_text=f'ממוצע {avg_del11:.1f}%')
+        fig9.update_layout(
+            title='שיעור מסירה לפי עיר | אום אל-פחם בצבע אדום',
+            title_font_color=C_BLUE, plot_bgcolor='white',
+            xaxis_title='שיעור מסירה%', xaxis_range=[0, 115], height=380,
+        )
+        st.plotly_chart(fig9, use_container_width=True)
+
+    # ── תובנות מרכזיות ───────────────────────────────────────────
+    st.markdown('---')
+    st.markdown('#### 💡 תובנות מרכזיות — אום אל-פחם')
+    power_users11 = (user_freq11 >= 5).sum()
+    col_i1, col_i2 = st.columns(2)
+    with col_i1:
+        st.info(f"""
+**74.8% הזמינו פעם אחת בלבד** — הזדמנות שימור עצומה.
+עם Retention שעולה מ-13.6% לכ-15.4%, המגמה חיובית אבל רחוקה מהפוטנציאל.
+Power Users (≥5 הזמנות): {power_users11} בלבד ({power_users11/unique_users_uaf*100:.1f}%).
+        """)
+    with col_i2:
+        st.warning(f"""
+**שיעור מסירה 58.6%** — אחד הנמוכים ביותר במערכת (Sakhnin: 75.7%).
+שבת = שיא ביקוש (1,581 הזמנות) אבל מסירה 56.4% בלבד.
+אם תתקן את המסירה — אום אל-פחם (30.7% מהדאטא) תניע את כל ה-KPIs.
+        """)
