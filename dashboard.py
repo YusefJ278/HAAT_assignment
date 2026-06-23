@@ -566,10 +566,10 @@ with tab5:
     area_rev  = fdf.groupby('AreaName').agg(
         revenue=('Price','sum'),
         orders=('Id','count'),
-        delivered=('delivered','sum'),
+        rejected=('rejected','sum'),
     ).assign(
         pct=lambda x: (x['revenue']/total_rev*100).round(1),
-        delivery_rate=lambda x: (x['delivered']/x['orders']*100).round(1),
+        rej_rate=lambda x: (x['rejected']/x['orders']*100).round(2),
         aov=lambda x: (x['revenue']/x['orders']).round(2),
     ).sort_values('revenue', ascending=False).reset_index()
 
@@ -578,23 +578,23 @@ with tab5:
     top_area     = area_rev.iloc[0]
     top3_biz_pct = 7.2
     n_biz        = fdf['BusinessId'].nunique()
-    corr_val     = -0.623
+    corr_val     = round(float(np.corrcoef(area_rev['rej_rate'], area_rev['revenue'])[0,1]), 3)
     c1.metric('סה"כ הכנסות',           f'₪{total_rev:,.0f}')
     c2.metric('האזור המוביל',           f'{top_area["AreaName"]} ({top_area["pct"]:.1f}%)')
     c3.metric('תלות TOP 3 עסקים',       f'{top3_biz_pct}%')
-    c4.metric('קורלציה הכנסה↔מסירה',   f'r = {corr_val}')
+    c4.metric('קורלציה הכנסה↔דחייה',   f'r = {corr_val:.3f}')
 
     st.markdown('---')
 
-    # ── פאנל כפול: הכנסות + מסירה לפי אזור ──────────────────────
+    # ── פאנל כפול: הכנסות + דחיית מסעדה לפי אזור ───────────────
     area_sorted = area_rev.sort_values('revenue', ascending=True)
     fig = make_subplots(rows=1, cols=2,
                         subplot_titles=['הכנסות לפי אזור (אלפי ₪)',
-                                        'שיעור מסירה לפי אזור (%)'],
+                                        'שיעור דחיית מסעדה לפי אזור (%)'],
                         horizontal_spacing=0.08)
 
-    rev_colors = [C_GREEN if r >= 90 else (C_ACCENT if r >= 70 else C_RED)
-                  for r in area_sorted['delivery_rate']]
+    rev_colors = [C_RED if r >= 6 else (C_GOLD if r >= 3 else C_GREEN)
+                  for r in area_sorted['rej_rate']]
     fig.add_trace(go.Bar(
         x=area_sorted['revenue']/1000, y=area_sorted['AreaName'],
         orientation='h', marker_color=rev_colors,
@@ -602,41 +602,41 @@ with tab5:
         textposition='outside', name='הכנסות',
     ), row=1, col=1)
 
-    del_colors = [C_GREEN if r >= 90 else (C_ACCENT if r >= 70 else C_RED)
-                  for r in area_sorted['delivery_rate']]
-    avg_del = fdf['delivered'].mean() * 100
+    rej_colors = [C_RED if r >= 6 else (C_GOLD if r >= 3 else C_GREEN)
+                  for r in area_sorted['rej_rate']]
+    avg_rej = fdf['rejected'].mean() * 100
     fig.add_trace(go.Bar(
-        x=area_sorted['delivery_rate'], y=area_sorted['AreaName'],
-        orientation='h', marker_color=del_colors,
-        text=area_sorted['delivery_rate'].apply(lambda r: f'{r:.1f}%'),
-        textposition='outside', name='מסירה %',
+        x=area_sorted['rej_rate'], y=area_sorted['AreaName'],
+        orientation='h', marker_color=rej_colors,
+        text=area_sorted['rej_rate'].apply(lambda r: f'{r:.2f}%'),
+        textposition='outside', name='דחייה %',
     ), row=1, col=2)
-    fig.add_vline(x=avg_del, line_dash='dash', line_color=C_GOLD,
-                  annotation_text=f'ממוצע {avg_del:.1f}%', row=1, col=2)
+    fig.add_vline(x=avg_rej, line_dash='dash', line_color=C_GOLD,
+                  annotation_text=f'ממוצע {avg_rej:.2f}%', row=1, col=2)
 
     fig.update_layout(height=420, plot_bgcolor='white', showlegend=False,
-                      title_text='הכנסות מול שיעור מסירה — לפי אזור',
+                      title_text='הכנסות מול שיעור דחיית מסעדה — לפי אזור',
                       title_font_color=C_BLUE, title_font_size=14)
     fig.update_xaxes(range=[0, 1550], row=1, col=1)
-    fig.update_xaxes(range=[0, 120],  row=1, col=2)
+    fig.update_xaxes(range=[0, 10],   row=1, col=2)
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('---')
     col_l, col_r = st.columns(2)
 
-    # ── scatter: הכנסה vs מסירה ──────────────────────────────────
+    # ── scatter: הכנסה vs דחיית מסעדה ───────────────────────────
     with col_l:
         fig = px.scatter(
-            area_rev, x='delivery_rate', y='revenue',
-            size='orders', color='delivery_rate',
-            color_continuous_scale=['#8B0000','#2674C1','#1B5E20'],
+            area_rev, x='rej_rate', y='revenue',
+            size='orders', color='rej_rate',
+            color_continuous_scale=['#1B5E20','#2674C1','#8B0000'],
             text='AreaName', hover_data=['orders','aov'],
-            title='קורלציה שלילית: הכנסה גבוהה = מסירה גרועה (r = -0.62)',
-            labels={'delivery_rate':'שיעור מסירה (%)','revenue':'הכנסות (₪)'},
+            title=f'קורלציה: הכנסה ↔ דחיית מסעדה (r = {corr_val:.2f})',
+            labels={'rej_rate':'שיעור דחייה (%)','revenue':'הכנסות (₪)'},
         )
         fig.update_traces(textposition='top center', textfont_size=9)
-        z = np.polyfit(area_rev['delivery_rate'], area_rev['revenue'], 1)
-        xr = np.linspace(area_rev['delivery_rate'].min(), area_rev['delivery_rate'].max(), 100)
+        z = np.polyfit(area_rev['rej_rate'], area_rev['revenue'], 1)
+        xr = np.linspace(area_rev['rej_rate'].min(), area_rev['rej_rate'].max(), 100)
         fig.add_trace(go.Scatter(x=xr, y=np.poly1d(z)(xr),
                                  mode='lines', line=dict(color=C_RED, dash='dash', width=2),
                                  name='קו מגמה', showlegend=True))
@@ -672,8 +672,8 @@ with tab5:
     # ── טבלת אזורים ──────────────────────────────────────────────
     st.markdown('---')
     st.markdown('#### טבלת פירוט הכנסות לפי אזור')
-    tbl = area_rev[['AreaName','revenue','orders','aov','pct','delivery_rate']].copy()
-    tbl.columns = ['אזור','הכנסות (₪)','הזמנות','AOV (₪)','% מסה"כ','שיעור מסירה %']
+    tbl = area_rev[['AreaName','revenue','orders','aov','pct','rej_rate']].copy()
+    tbl.columns = ['אזור','הכנסות (₪)','הזמנות','AOV (₪)','% מסה"כ','דחיית מסעדה %']
     st.dataframe(tbl, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════
@@ -832,8 +832,10 @@ with tab7:
     # ── גרף 1: מגמה שבועית ──────────────────────────────────────
     _w7_vol = fdf7.groupby('Week').agg(orders=('Id','count'), revenue=('Price','sum')).reset_index()
     _w7_del = fdf7_d.groupby('Week').agg(delivered=('delivered','sum'), orders_d=('Id','count')).reset_index()
-    weekly7 = _w7_vol.merge(_w7_del, on='Week', how='left')
+    _w7_rej = fdf7.groupby('Week').agg(rejected=('rejected','sum')).reset_index()
+    weekly7 = _w7_vol.merge(_w7_del, on='Week', how='left').merge(_w7_rej, on='Week', how='left')
     weekly7['delivery_rate'] = (weekly7['delivered'] / weekly7['orders_d'] * 100).round(1)
+    weekly7['rej_rate']      = (weekly7['rejected'] / weekly7['orders'] * 100).round(2)
     weekly7['aov']           = (weekly7['revenue'] / weekly7['orders']).round(2)
     weekly7['wow_pct']       = weekly7['orders'].pct_change() * 100
 
@@ -865,9 +867,9 @@ with tab7:
     with col_r:
         fig2 = make_subplots(specs=[[{'secondary_y': True}]])
         fig2.add_trace(go.Scatter(
-            x=weekly7['Week'], y=weekly7['delivery_rate'],
-            mode='lines+markers', name='שיעור מסירה %',
-            line=dict(color=C_GREEN, width=2),
+            x=weekly7['Week'], y=weekly7['rej_rate'],
+            mode='lines+markers', name='שיעור דחייה %',
+            line=dict(color=C_RED, width=2),
         ), secondary_y=False)
         fig2.add_trace(go.Scatter(
             x=weekly7['Week'], y=weekly7['aov'],
@@ -875,12 +877,12 @@ with tab7:
             line=dict(color=C_GOLD, width=2, dash='dot'),
         ), secondary_y=True)
         fig2.update_layout(
-            title='שיעור מסירה ו-AOV שבועי',
+            title='שיעור דחיית מסעדה ו-AOV שבועי',
             title_font_color=C_BLUE, plot_bgcolor='white', height=320,
             legend=dict(orientation='h', y=-0.3),
         )
         fig2.update_xaxes(tickangle=45)
-        fig2.update_yaxes(title_text='מסירה %', secondary_y=False)
+        fig2.update_yaxes(title_text='דחייה %', secondary_y=False)
         fig2.update_yaxes(title_text='AOV ₪', secondary_y=True)
         st.plotly_chart(fig2, use_container_width=True)
 
@@ -965,11 +967,14 @@ with tab7:
     # ── טבלת אנומליות ────────────────────────────────────────────
     st.markdown('---')
     st.markdown('#### שבועות אנומליה מרכזיים')
+    _aw_idx = weekly7.set_index('Week')
+    _aw_rej = {w: (f"{_aw_idx.loc[w, 'rej_rate']:.2f}%" if w in _aw_idx.index else 'N/A')
+               for w in anomaly_weeks}
     anomaly_data = {
         'שבוע': ['11–17 מרץ', '8–14 אפריל'],
         'הזמנות': [1134, 1573],
         'שינוי WoW': ['-40.1%', '+15.4%'],
-        'מסירה %': ['72.2%', '48.4%'],
+        'דחיית מסעדה %': [_aw_rej[anomaly_weeks[0]], _aw_rej[anomaly_weeks[1]]],
         'AOV ₪': ['106.73', '128.86'],
         'הסבר': ['תחילת רמדאן 2024 (11 מרץ)', 'תקיפת איראן? (13 אפריל 2024)'],
     }
@@ -1592,11 +1597,9 @@ with tab11:
         orders=('Id', 'count'),
         users=('UserId', 'nunique'),
     ).reset_index()
-    _m11_del = uaf_d.groupby('Month').agg(
-        delivered_n=('delivered', 'sum'), orders_d=('Id', 'count')
-    ).reset_index()
-    monthly11 = monthly11.merge(_m11_del, on='Month', how='left')
-    monthly11['delivery_rate'] = monthly11['delivered_n'] / monthly11['orders_d'] * 100
+    _m11_rej = uaf.groupby('Month').agg(rej_n=('rejected','sum'), orders_m=('Id','count')).reset_index()
+    _m11_rej['rej_rate_m'] = (_m11_rej['rej_n'] / _m11_rej['orders_m'] * 100).round(2)
+    monthly11 = monthly11.merge(_m11_rej[['Month','rej_rate_m']], on='Month', how='left')
     monthly11 = monthly11[monthly11['Month'].isin(MONTHS_ORDER)].copy()
     monthly11['month_label'] = monthly11['Month'].map(MONTH_HEB)
 
@@ -1615,17 +1618,17 @@ with tab11:
             text=monthly11['users'], textposition='outside',
         ), secondary_y=False)
         fig.add_trace(go.Scatter(
-            x=monthly11['month_label'], y=monthly11['delivery_rate'],
-            name='מסירה%', mode='lines+markers',
+            x=monthly11['month_label'], y=monthly11['rej_rate_m'],
+            name='דחייה%', mode='lines+markers',
             line=dict(color=C_RED, width=3), marker=dict(size=9),
         ), secondary_y=True)
         fig.update_layout(
-            title='הזמנות, משתמשים ושיעור מסירה לפי חודש',
+            title='הזמנות, משתמשים ושיעור דחיית מסעדה לפי חודש',
             title_font_color=C_BLUE, plot_bgcolor='white', barmode='group',
             legend=dict(orientation='h', y=-0.25), height=380,
         )
         fig.update_yaxes(title_text='כמות', secondary_y=False)
-        fig.update_yaxes(title_text='מסירה%', secondary_y=True, range=[50, 75])
+        fig.update_yaxes(title_text='דחייה%', secondary_y=True, range=[0, 8])
         st.plotly_chart(fig, use_container_width=True)
 
     # ── 2: חדשים vs. חוזרים ─────────────────────────────────────
@@ -1734,12 +1737,9 @@ with tab11:
     dow11 = uaf.groupby('DayOfWeek').agg(
         orders=('Id', 'count'),
         users=('UserId', 'nunique'),
+        rej_n=('rejected', 'sum'),
     ).reset_index()
-    _dow11_del = uaf_d.groupby('DayOfWeek').agg(
-        delivered=('delivered', 'sum'), orders_d=('Id', 'count')
-    ).reset_index()
-    dow11 = dow11.merge(_dow11_del, on='DayOfWeek', how='left')
-    dow11['delivery_rate'] = dow11['delivered'] / dow11['orders_d'] * 100
+    dow11['rej_rate'] = (dow11['rej_n'] / dow11['orders'] * 100).round(2)
     dow11['day_name'] = dow11['DayOfWeek'].map(DOW_HEB)
     day_order = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
     dow11['day_name'] = pd.Categorical(dow11['day_name'], categories=day_order, ordered=True)
@@ -1756,17 +1756,17 @@ with tab11:
             text=dow11['orders'], textposition='outside',
         ), secondary_y=False)
         fig5.add_trace(go.Scatter(
-            x=dow11['day_name'], y=dow11['delivery_rate'],
-            name='מסירה%', mode='lines+markers',
-            line=dict(color=C_GREEN, width=2.5), marker=dict(size=8),
+            x=dow11['day_name'], y=dow11['rej_rate'],
+            name='דחייה%', mode='lines+markers',
+            line=dict(color=C_RED, width=2.5), marker=dict(size=8),
         ), secondary_y=True)
         fig5.update_layout(
-            title='הזמנות ומסירה לפי יום בשבוע | אדום = סוף שבוע',
+            title='הזמנות ודחיית מסעדה לפי יום בשבוע | אדום = סוף שבוע',
             title_font_color=C_BLUE, plot_bgcolor='white',
             legend=dict(orientation='h', y=-0.25), height=360,
         )
         fig5.update_yaxes(title_text='הזמנות', secondary_y=False)
-        fig5.update_yaxes(title_text='מסירה%', secondary_y=True, range=[50, 70])
+        fig5.update_yaxes(title_text='דחייה%', secondary_y=True, range=[0, 8])
         st.plotly_chart(fig5, use_container_width=True)
 
     # ── 6: אירוע אפריל 8–14 ─────────────────────────────────────
@@ -1778,7 +1778,7 @@ with tab11:
         }
         ev_labels11  = list(ev_windows.keys())
         ev_orders11  = [len(v) for v in ev_windows.values()]
-        ev_deliv11   = [v['delivered'].mean() * 100 for v in ev_windows.values()]
+        ev_rej11     = [round(v['rejected'].mean() * 100, 2) for v in ev_windows.values()]
         ev_colors11  = [C_ACCENT, C_RED, C_GREEN]
 
         fig6 = make_subplots(specs=[[{'secondary_y': True}]])
@@ -1788,34 +1788,31 @@ with tab11:
             text=ev_orders11, textposition='outside',
         ), secondary_y=False)
         fig6.add_trace(go.Scatter(
-            x=ev_labels11, y=ev_deliv11,
-            name='מסירה%', mode='lines+markers',
+            x=ev_labels11, y=ev_rej11,
+            name='דחייה%', mode='lines+markers',
             line=dict(color=C_GOLD, width=3), marker=dict(size=10),
         ), secondary_y=True)
-        for xi, yi in zip(ev_labels11, ev_deliv11):
+        for xi, yi in zip(ev_labels11, ev_rej11):
             fig6.add_annotation(x=xi, y=yi, text=f'{yi:.1f}%',
                                 yshift=18, showarrow=False,
                                 font=dict(color=C_GOLD, size=12))
         fig6.update_layout(
-            title='אירוע 8–14 אפריל | מסירה קרסה ל-35.9%',
+            title='אירוע 8–14 אפריל | נפח הזמנות ושיעור דחיית מסעדה',
             title_font_color=C_BLUE, plot_bgcolor='white',
             legend=dict(orientation='h', y=-0.25),
             height=360, yaxis_range=[300, 560],
         )
         fig6.update_yaxes(title_text='הזמנות', secondary_y=False)
-        fig6.update_yaxes(title_text='מסירה%', secondary_y=True, range=[0, 80])
+        fig6.update_yaxes(title_text='דחייה%', secondary_y=True, range=[0, 10])
         st.plotly_chart(fig6, use_container_width=True)
 
     st.markdown('---')
 
     # ── 7: טרנד שבועי ────────────────────────────────────────────
-    weekly11 = uaf.groupby('Week').agg(
-        orders=('Id', 'count'),
-        users=('UserId', 'nunique'),
-        delivery_rate=('delivered', 'mean'),
-    ).reset_index().sort_values('Week')
+    _w11_vol = uaf.groupby('Week').agg(orders=('Id','count'), users=('UserId','nunique'), rej_n=('rejected','sum')).reset_index()
+    weekly11 = _w11_vol.sort_values('Week')
     weekly11 = weekly11[weekly11['Week'] >= '2024-02'].copy()
-    weekly11['delivery_rate'] *= 100
+    weekly11['rej_rate'] = (weekly11['rej_n'] / weekly11['orders'] * 100).round(2)
 
     fig7 = make_subplots(specs=[[{'secondary_y': True}]])
     fig7.add_trace(go.Scatter(
@@ -1830,8 +1827,8 @@ with tab11:
         line=dict(color=C_GREEN, width=2, dash='dot'), marker=dict(size=5),
     ), secondary_y=False)
     fig7.add_trace(go.Scatter(
-        x=weekly11['Week'], y=weekly11['delivery_rate'],
-        name='מסירה%', mode='lines+markers',
+        x=weekly11['Week'], y=weekly11['rej_rate'],
+        name='דחייה%', mode='lines+markers',
         line=dict(color=C_GOLD, width=2), marker=dict(size=5),
     ), secondary_y=True)
 
@@ -1845,13 +1842,13 @@ with tab11:
         )
 
     fig7.update_layout(
-        title='טרנד שבועי — הזמנות, משתמשים ושיעור מסירה',
+        title='טרנד שבועי — הזמנות, משתמשים ושיעור דחיית מסעדה',
         title_font_color=C_BLUE, plot_bgcolor='white', height=380,
         legend=dict(orientation='h', y=-0.2),
         xaxis=dict(tickangle=35),
     )
     fig7.update_yaxes(title_text='הזמנות / משתמשים', secondary_y=False)
-    fig7.update_yaxes(title_text='מסירה%', secondary_y=True, range=[30, 80])
+    fig7.update_yaxes(title_text='דחייה%', secondary_y=True, range=[0, 10])
     st.plotly_chart(fig7, use_container_width=True)
 
     st.markdown('---')
@@ -1860,11 +1857,9 @@ with tab11:
     _bc11_vol = df.groupby('AreaName').agg(
         orders=('Id', 'count'), users=('UserId', 'nunique'), aov=('Price', 'mean')
     ).reset_index()
-    _bc11_del = df[df['is_delivery']].groupby('AreaName').agg(
-        delivered=('delivered', 'sum'), orders_d=('Id', 'count')
-    ).reset_index()
-    by_city11 = _bc11_vol.merge(_bc11_del, on='AreaName', how='left')
-    by_city11['delivery_rate'] = by_city11['delivered'] / by_city11['orders_d'] * 100
+    _bc11_rej = df.groupby('AreaName').agg(rej_n=('rejected','sum'), orders_r=('Id','count')).reset_index()
+    _bc11_rej['rej_rate'] = (_bc11_rej['rej_n'] / _bc11_rej['orders_r'] * 100).round(2)
+    by_city11 = _bc11_vol.merge(_bc11_rej[['AreaName','rej_rate']], on='AreaName', how='left')
     by_city11 = by_city11.sort_values('orders', ascending=True)
     by_city11['is_uaf'] = by_city11['AreaName'] == 'Umm al-Fahem'
 
@@ -1885,20 +1880,20 @@ with tab11:
         st.plotly_chart(fig8, use_container_width=True)
 
     with col_c2:
-        del_colors11 = [C_RED if u else C_GREEN for u in by_city11['is_uaf']]
-        avg_del11    = df['delivered'].mean() * 100
+        rej_colors11 = [C_RED if u else C_GREEN for u in by_city11['is_uaf']]
+        avg_rej11    = df['rejected'].mean() * 100
         fig9 = go.Figure(go.Bar(
-            x=by_city11['delivery_rate'], y=by_city11['AreaName'],
-            orientation='h', marker_color=del_colors11,
-            text=by_city11['delivery_rate'].apply(lambda v: f'{v:.1f}%'),
+            x=by_city11['rej_rate'], y=by_city11['AreaName'],
+            orientation='h', marker_color=rej_colors11,
+            text=by_city11['rej_rate'].apply(lambda v: f'{v:.2f}%'),
             textposition='outside',
         ))
-        fig9.add_vline(x=avg_del11, line_dash='dash', line_color=C_GOLD,
-                       annotation_text=f'ממוצע {avg_del11:.1f}%')
+        fig9.add_vline(x=avg_rej11, line_dash='dash', line_color=C_GOLD,
+                       annotation_text=f'ממוצע {avg_rej11:.2f}%')
         fig9.update_layout(
-            title='שיעור מסירה לפי עיר | אום אל-פחם בצבע אדום',
+            title='שיעור דחיית מסעדה לפי עיר | אום אל-פחם בצבע אדום',
             title_font_color=C_BLUE, plot_bgcolor='white',
-            xaxis_title='שיעור מסירה%', xaxis_range=[0, 115], height=380,
+            xaxis_title='שיעור דחייה%', xaxis_range=[0, 10], height=380,
         )
         st.plotly_chart(fig9, use_container_width=True)
 
