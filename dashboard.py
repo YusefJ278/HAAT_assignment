@@ -1834,12 +1834,13 @@ with tab11:
 
     event_week11 = weekly11[weekly11['Week'].str.startswith('2024-04-08')]
     if len(event_week11):
-        fig7.add_vline(
-            x=event_week11['Week'].values[0],
-            line_dash='dash', line_color=C_RED, line_width=1.5,
-            annotation_text='8–14 אפריל', annotation_position='top right',
-            annotation_font_color=C_RED,
-        )
+        _ew = event_week11['Week'].values[0]
+        fig7.add_shape(type='line', x0=_ew, x1=_ew, y0=0, y1=1,
+                       xref='x', yref='paper',
+                       line=dict(color=C_RED, dash='dash', width=1.5))
+        fig7.add_annotation(x=_ew, y=1.02, xref='x', yref='paper',
+                            text='8–14 אפריל', showarrow=False,
+                            font=dict(color=C_RED, size=10), xanchor='right')
 
     fig7.update_layout(
         title='טרנד שבועי — הזמנות, משתמשים ושיעור דחיית מסעדה',
